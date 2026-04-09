@@ -1,10 +1,9 @@
-import { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Palette, 
   Users, 
   Trophy, 
-  Info, 
   Upload, 
   CheckCircle2, 
   MessageSquare, 
@@ -15,7 +14,9 @@ import {
   User,
   LogOut,
   Timer,
-  LogIn
+  LogIn,
+  Plus,
+  X
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { QRCodeSVG } from "qrcode.react";
@@ -24,6 +25,7 @@ import { getFeedback, generateAIImage } from "./lib/gemini";
 import { 
   auth, 
   db, 
+  storage,
   googleProvider, 
   signInWithPopup, 
   onAuthStateChanged,
@@ -38,8 +40,39 @@ import {
   where, 
   orderBy,
   increment,
-  serverTimestamp
+  serverTimestamp,
+  ref,
+  uploadBytes,
+  getDownloadURL
 } from "./lib/firebase";
+
+// --- Constants ---
+const PRESET_ARTWORKS = [
+  {
+    title: "별이 빛나는 밤",
+    artist: "빈센트 반 고흐",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1280px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+    description: "밤하늘의 소용돌이치는 구름과 빛나는 별, 그리고 사이프러스 나무가 특징인 후기 인상주의 걸작입니다."
+  },
+  {
+    title: "진주 귀걸이를 한 소녀",
+    artist: "요하네스 페르메이르",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Johannes_Vermeer_%281632-1675%29_-_The_Girl_With_The_Pearl_Earring_%281665%29.jpg/800px-Johannes_Vermeer_%281632-1675%29_-_The_Girl_With_The_Pearl_Earring_%281665%29.jpg",
+    description: "신비로운 표정과 빛나는 진주 귀걸이, 그리고 이국적인 터번이 돋보이는 네덜란드 황금기 초상화입니다."
+  },
+  {
+    title: "기억의 지속",
+    artist: "살바도르 달리",
+    url: "https://upload.wikimedia.org/wikipedia/en/d/dd/The_Persistence_of_Memory.jpg",
+    description: "녹아내리는 시계들이 황량한 풍경 속에 놓여 있는 초현실주의의 대표적인 작품입니다."
+  },
+  {
+    title: "절규",
+    artist: "에드바르 뭉크",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/The_Scream.jpg/800px-The_Scream.jpg",
+    description: "불안과 공포를 강렬한 색채와 소용돌이치는 선으로 표현한 표현주의의 상징적인 작품입니다."
+  }
+];
 
 // --- Types ---
 type View = "home" | "teacher-dashboard" | "student-join" | "student-lobby" | "game-play" | "voting" | "results";
@@ -155,6 +188,8 @@ export default function App() {
   const [artworkDesc, setArtworkDesc] = useState("");
   const [artworkUrl, setArtworkUrl] = useState("");
   const [rounds, setRounds] = useState(3);
+  const [uploading, setUploading] = useState(false);
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
@@ -207,8 +242,36 @@ export default function App() {
     }
   };
 
+  const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file || !user) return;
+
+    setUploading(true);
+    try {
+      const storageRef = ref(storage, `artworks/${user.uid}/${Date.now()}_${file.name}`);
+      const snapshot = await uploadBytes(storageRef, file);
+      const url = await getDownloadURL(snapshot.ref);
+      setArtworkUrl(url);
+    } catch (error) {
+      console.error("Upload failed", error);
+      alert("이미지 업로드에 실패했습니다.");
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleSelectPreset = (preset: typeof PRESET_ARTWORKS[0]) => {
+    setArtworkTitle(preset.title);
+    setArtworkArtist(preset.artist);
+    setArtworkUrl(preset.url);
+    setArtworkDesc(preset.description);
+  };
+
   const handleCreateSession = async () => {
-    if (!artworkUrl || !artworkTitle || !user) return;
+    if (!artworkUrl || !artworkTitle || !user) {
+      alert("작품 정보와 이미지를 모두 입력해 주세요.");
+      return;
+    }
     setLoading(true);
     const sessionId = Math.random().toString(36).substring(2, 8).toUpperCase();
     
@@ -363,12 +426,63 @@ export default function App() {
         <div className="grid lg:grid-cols-3 gap-8">
           <div className="lg:col-span-2 space-y-6">
             <Card className="space-y-6">
-              <h3 className="text-xl font-bold flex items-center gap-2"><ImageIcon className="text-indigo-600" /> 작품 정보 입력</h3>
+              <div className="flex items-center justify-between">
+                <h3 className="text-xl font-bold flex items-center gap-2"><ImageIcon className="text-indigo-600" /> 작품 선택 및 업로드</h3>
+                <input 
+                  type="file" 
+                  ref={fileInputRef} 
+                  onChange={handleFileUpload} 
+                  className="hidden" 
+                  accept="image/*"
+                />
+                <Button 
+                  variant="secondary" 
+                  icon={Upload} 
+                  onClick={() => fileInputRef.current?.click()}
+                  loading={uploading}
+                >
+                  이미지 불러오기
+                </Button>
+              </div>
+
+              <div className="space-y-4">
+                <p className="text-sm font-medium text-gray-500">추천 작품 선택</p>
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                  {PRESET_ARTWORKS.map((preset, idx) => (
+                    <div 
+                      key={idx}
+                      onClick={() => handleSelectPreset(preset)}
+                      className={cn(
+                        "relative aspect-square rounded-xl overflow-hidden cursor-pointer border-4 transition-all",
+                        artworkUrl === preset.url ? "border-indigo-600 scale-95" : "border-transparent hover:border-indigo-200"
+                      )}
+                    >
+                      <img src={preset.url} className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/40 flex items-end p-2">
+                        <p className="text-[10px] text-white font-bold truncate">{preset.title}</p>
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              </div>
+
               <div className="grid md:grid-cols-2 gap-4">
                 <Input label="작품 제목" value={artworkTitle} onChange={setArtworkTitle} placeholder="예: 별이 빛나는 밤" />
                 <Input label="작가 이름" value={artworkArtist} onChange={setArtworkArtist} placeholder="예: 빈센트 반 고흐" />
               </div>
-              <Input label="작품 이미지 URL" value={artworkUrl} onChange={setArtworkUrl} placeholder="https://..." icon={Upload} />
+              
+              {artworkUrl && (
+                <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-indigo-100 bg-white">
+                  <img src={artworkUrl} className="w-full h-full object-contain" />
+                  <button 
+                    onClick={() => setArtworkUrl("")}
+                    className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full hover:bg-black/70"
+                  >
+                    <X size={16} />
+                  </button>
+                </div>
+              )}
+
               <div className="space-y-1.5">
                 <label className="text-sm font-medium text-gray-700 ml-1 block">작품 설명 (AI 분석용)</label>
                 <textarea 
@@ -479,12 +593,12 @@ export default function App() {
         <div className="flex flex-col gap-6">
           <Card className="flex-1 flex flex-col gap-4">
             <h3 className="text-xl font-bold flex items-center gap-2 text-left"><MessageSquare className="text-indigo-600" /> 작품 묘사하기</h3>
-            <p className="text-gray-500 text-sm text-left">작품의 색감, 형태, 분위기를 구체적으로 설명해 보세요.</p>
+            <p className="text-gray-500 text-sm text-left">작품의 색감, 형태, 분위기를 자유롭게, 구체적으로 설명해 보세요.</p>
             <textarea 
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="flex-1 w-full p-4 rounded-2xl border-2 border-indigo-50 focus:border-indigo-500 focus:outline-none text-lg resize-none"
-              placeholder="여기에 묘사 내용을 입력하세요..."
+              className="flex-1 w-full p-4 rounded-2xl border-2 border-indigo-50 focus:border-indigo-500 focus:outline-none text-lg resize-none min-h-[200px]"
+              placeholder="여기에 묘사 내용을 자유롭게 입력하세요... 글자 수 제한 없이 마음껏 표현해 보세요!"
             />
             <Button className="w-full py-4" onClick={handleSubmitDescription} loading={loading}>제출하기</Button>
           </Card>
