@@ -1,0 +1,67 @@
+{
+  "entities": {
+    "sessions": {
+      "title": "Game Session",
+      "description": "Represents a single game session created by a teacher.",
+      "type": "object",
+      "properties": {
+        "id": { "type": "string" },
+        "teacherId": { "type": "string" },
+        "teacherEmail": { "type": "string" },
+        "status": { "type": "string", "enum": ["waiting", "playing", "voting", "finished"] },
+        "artwork": {
+          "type": "object",
+          "properties": {
+            "url": { "type": "string" },
+            "title": { "type": "string" },
+            "artist": { "type": "string" },
+            "description": { "type": "string" }
+          }
+        },
+        "rounds": { "type": "number" },
+        "currentRound": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["id", "teacherId", "status", "artwork", "rounds", "currentRound"]
+    },
+    "students": {
+      "title": "Student",
+      "description": "A student participating in a session.",
+      "type": "object",
+      "properties": {
+        "nickname": { "type": "string" },
+        "joinedAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["nickname"]
+    },
+    "submissions": {
+      "title": "Submission",
+      "description": "A student's description of the artwork.",
+      "type": "object",
+      "properties": {
+        "studentId": { "type": "string" },
+        "nickname": { "type": "string" },
+        "description": { "type": "string" },
+        "feedback": { "type": "string" },
+        "aiImage": { "type": "string" },
+        "voteCount": { "type": "number" },
+        "createdAt": { "type": "string", "format": "date-time" }
+      },
+      "required": ["studentId", "nickname", "description"]
+    }
+  },
+  "firestore": {
+    "/sessions/{sessionId}": {
+      "schema": "sessions",
+      "description": "Main session document"
+    },
+    "/sessions/{sessionId}/students/{studentId}": {
+      "schema": "students",
+      "description": "Students in the session"
+    },
+    "/sessions/{sessionId}/submissions/{submissionId}": {
+      "schema": "submissions",
+      "description": "Student submissions"
+    }
+  }
+}
