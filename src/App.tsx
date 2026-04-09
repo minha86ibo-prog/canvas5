@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useRef, useCallback } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Palette, 
@@ -16,7 +16,9 @@ import {
   Timer,
   LogIn,
   X,
-  ArrowLeft
+  ArrowLeft,
+  QrCode,
+  Copy
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { QRCodeSVG } from "qrcode.react";
@@ -47,7 +49,6 @@ import {
 } from "./lib/firebase";
 
 // --- Constants ---
-// 위키미디어 공용(Wikimedia Commons)의 안정적인 이미지 URL로 교체
 const PRESET_ARTWORKS = [
   {
     title: "별이 빛나는 밤",
@@ -161,26 +162,6 @@ const Card = ({ children, className, onClick }: any) => (
   </div>
 );
 
-const Input = ({ label, value, onChange, placeholder, type = "text", icon: Icon }: any) => (
-  <div className="space-y-1.5 w-full">
-    {label && <label className="text-sm font-medium text-gray-700 ml-1">{label}</label>}
-    <div className="relative">
-      {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />}
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        className={cn(
-          "w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white text-gray-900",
-          Icon && "pl-10"
-        )}
-      />
-    </div>
-  </div>
-);
-
 // --- Main App ---
 
 export default function App() {
@@ -189,12 +170,14 @@ export default function App() {
   const [session, setSession] = useState<Session | null>(null);
   const [students, setStudents] = useState<Student[]>([]);
   const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [loading, setLoading] = useState(false);
+  const [aiImage, setAiImage] = useState("");
+
+  // Student Input State
   const [nickname, setNickname] = useState("");
   const [joinCode, setJoinCode] = useState("");
-  const [description, setDescription] = useState("");
-  const [loading, setLoading] = useState(false);
+  const [studentDescription, setStudentDescription] = useState("");
   const [feedback, setFeedback] = useState("");
-  const [aiImage, setAiImage] = useState("");
 
   // Teacher Form State
   const [artworkTitle, setArtworkTitle] = useState("");
@@ -209,7 +192,6 @@ export default function App() {
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
-      // 로그인 성공 시 대시보드로 이동 (홈 화면일 때만)
       if (currentUser && view === "home") {
         setView("teacher-dashboard");
       }
@@ -227,7 +209,7 @@ export default function App() {
         const data = docSnap.data() as Session;
         setSession({ ...data, id: docSnap.id });
         
-        // 상태에 따른 자동 뷰 전환
+        // Auto-navigate based on status
         if (data.status === "playing") setView("game-play");
         if (data.status === "voting") setView("voting");
         if (data.status === "finished") setView("results");
@@ -264,15 +246,13 @@ export default function App() {
 
     setUploading(true);
     try {
-      // Firebase Storage 경로 설정
       const storageRef = ref(storage, `artworks/${user.uid}/${Date.now()}_${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
       const url = await getDownloadURL(snapshot.ref);
       setArtworkUrl(url);
-      console.log("Upload success:", url);
     } catch (error) {
       console.error("Upload failed", error);
-      alert("이미지 업로드에 실패했습니다. Firebase Storage 설정을 확인해 주세요.");
+      alert("이미지 업로드에 실패했습니다.");
     } finally {
       setUploading(false);
     }
@@ -310,7 +290,6 @@ export default function App() {
       setSession(sessionData);
     } catch (error) {
       console.error("Session creation failed", error);
-      alert("세션 생성에 실패했습니다.");
     } finally {
       setLoading(false);
     }
@@ -347,17 +326,17 @@ export default function App() {
   };
 
   const handleSubmitDescription = async () => {
-    if (!description || !session) return;
+    if (!studentDescription || !session) return;
     setLoading(true);
     
     try {
-      const aiFeedback = await getFeedback(session.artwork.description, description);
+      const aiFeedback = await getFeedback(session.artwork.description, studentDescription);
       setFeedback(aiFeedback || "");
       
       await addDoc(collection(db, "sessions", session.id, "submissions"), {
         studentId: auth.currentUser?.uid || "anonymous",
         nickname: nickname || "익명",
-        description,
+        description: studentDescription,
         voteCount: 0,
         createdAt: serverTimestamp()
       });
@@ -484,7 +463,7 @@ export default function App() {
               </div>
 
               <div className="space-y-4">
-                <p className="text-sm font-medium text-gray-500">추천 작품 선택 (안정적인 이미지)</p>
+                <p className="text-sm font-medium text-gray-500">추천 작품 선택</p>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {PRESET_ARTWORKS.map((preset, idx) => (
                     <div 
@@ -505,8 +484,24 @@ export default function App() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
-                <Input label="작품 제목" value={artworkTitle} onChange={setArtworkTitle} placeholder="예: 별이 빛나는 밤" />
-                <Input label="작가 이름" value={artworkArtist} onChange={setArtworkArtist} placeholder="예: 빈센트 반 고흐" />
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700 ml-1">작품 제목</label>
+                  <input
+                    value={artworkTitle}
+                    onChange={(e) => setArtworkTitle(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="예: 별이 빛나는 밤"
+                  />
+                </div>
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-gray-700 ml-1">작가 이름</label>
+                  <input
+                    value={artworkArtist}
+                    onChange={(e) => setArtworkArtist(e.target.value)}
+                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                    placeholder="예: 빈센트 반 고흐"
+                  />
+                </div>
               </div>
               
               {artworkUrl && (
@@ -572,15 +567,37 @@ export default function App() {
 
   const StudentJoinView = () => (
     <div className="min-h-screen bg-amber-50 flex items-center justify-center p-6">
-      <Card className="max-w-md w-full space-y-8 p-10">
-        <div className="text-center space-y-2">
-          <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("home")} className="absolute top-4 left-4">뒤로가기</Button>
+      <Card className="max-w-md w-full space-y-8 p-10 relative">
+        <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("home")} className="absolute top-4 left-4 p-2">뒤로가기</Button>
+        <div className="text-center space-y-2 pt-8">
           <h2 className="text-3xl font-bold text-gray-900">게임 참여하기</h2>
           <p className="text-gray-500">닉네임과 접속 코드를 입력하세요.</p>
         </div>
         <div className="space-y-4">
-          <Input label="닉네임" value={nickname} onChange={setNickname} placeholder="멋진 예술가" icon={User} />
-          <Input label="접속 코드" value={joinCode} onChange={setJoinCode} placeholder="ABCDEF" icon={Palette} />
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700 ml-1">닉네임</label>
+            <div className="relative">
+              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                value={nickname}
+                onChange={(e) => setNickname(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="멋진 예술가"
+              />
+            </div>
+          </div>
+          <div className="space-y-1.5">
+            <label className="text-sm font-medium text-gray-700 ml-1">접속 코드</label>
+            <div className="relative">
+              <Palette className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
+              <input
+                value={joinCode}
+                onChange={(e) => setJoinCode(e.target.value)}
+                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
+                placeholder="ABCDEF"
+              />
+            </div>
+          </div>
           <Button variant="accent" className="w-full mt-4 text-amber-950" onClick={handleJoinSession} loading={loading}>입장하기</Button>
         </div>
       </Card>
@@ -588,8 +605,8 @@ export default function App() {
   );
 
   const StudentLobbyView = () => (
-    <div className="min-h-screen bg-indigo-600 flex flex-col items-center justify-center p-6 text-white text-center">
-      <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("student-join")} className="absolute top-6 left-6 text-white hover:bg-white/10">뒤로가기</Button>
+    <div className="min-h-screen bg-indigo-600 flex flex-col items-center justify-center p-6 text-white text-center relative">
+      <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("student-join")} className="absolute top-6 left-6 text-white hover:bg-white/10 p-2">뒤로가기</Button>
       <motion.div 
         animate={{ scale: [1, 1.1, 1] }}
         transition={{ repeat: Infinity, duration: 2 }}
@@ -634,8 +651,8 @@ export default function App() {
             <h3 className="text-xl font-bold flex items-center gap-2 text-left"><MessageSquare className="text-indigo-600" /> 작품 묘사하기</h3>
             <p className="text-gray-500 text-sm text-left">작품의 색감, 형태, 분위기를 자유롭게, 구체적으로 설명해 보세요.</p>
             <textarea 
-              value={description}
-              onChange={(e) => setDescription(e.target.value)}
+              value={studentDescription}
+              onChange={(e) => setStudentDescription(e.target.value)}
               className="flex-1 w-full p-4 rounded-2xl border-2 border-indigo-50 focus:border-indigo-500 focus:outline-none text-lg resize-none min-h-[250px] bg-white text-gray-900 shadow-inner"
               placeholder="여기에 묘사 내용을 자유롭게 입력하세요... 글자 수 제한 없이 마음껏 표현해 보세요!"
               spellCheck="false"
