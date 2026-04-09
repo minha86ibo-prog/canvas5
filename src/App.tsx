@@ -1,783 +1,1231 @@
-import React, { useState, useEffect, useRef } from "react";
-import { motion, AnimatePresence } from "motion/react";
+import React, { useState, useEffect, useRef } from 'react';
+import { auth, db, storage } from './firebase';
+import { 
+  onAuthStateChanged, 
+  signInWithPopup, 
+  GoogleAuthProvider, 
+  signOut,
+  signInAnonymously,
+  updateProfile,
+  User as FirebaseUser
+} from 'firebase/auth';
+import { collection, onSnapshot, query, orderBy, limit, Timestamp } from 'firebase/firestore';
+import { ref, uploadBytes, getDownloadURL } from 'firebase/storage';
 import { 
   Palette, 
   Users, 
-  Trophy, 
-  Upload, 
-  CheckCircle2, 
-  MessageSquare, 
-  Vote, 
-  Image as ImageIcon,
-  Sparkles,
-  ChevronRight,
-  User,
+  Play, 
+  LogIn, 
+  Trophy,
+  ArrowRight,
+  Loader2,
+  Info,
   LogOut,
-  Timer,
-  LogIn,
-  X,
-  ArrowLeft,
-  QrCode,
+  Sparkles,
+  MessageSquare,
+  Camera,
+  PenTool,
   Copy,
-  AlertCircle
-} from "lucide-react";
-import confetti from "canvas-confetti";
-import { QRCodeSVG } from "qrcode.react";
-import { cn } from "./lib/utils";
-import { getFeedback, generateAIImage } from "./lib/gemini";
-import { 
-  auth, 
-  db, 
-  storage,
-  googleProvider, 
-  signInWithPopup, 
-  onAuthStateChanged,
-  doc, 
-  setDoc, 
-  getDoc, 
-  updateDoc, 
-  collection, 
-  addDoc, 
-  onSnapshot, 
-  query, 
-  where, 
-  orderBy,
-  increment,
-  serverTimestamp,
-  ref,
-  uploadBytes,
-  getDownloadURL
-} from "./lib/firebase";
-
-// --- Constants ---
-const PRESET_ARTWORKS = [
-  {
-    title: "별이 빛나는 밤",
-    artist: "빈센트 반 고흐",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1024px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
-    description: "밤하늘의 소용돌이치는 구름과 빛나는 별, 그리고 사이프러스 나무가 특징인 후기 인상주의 걸작입니다."
-  },
-  {
-    title: "진주 귀걸이를 한 소녀",
-    artist: "요하네스 페르메이르",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Johannes_Vermeer_%281632-1675%29_-_The_Girl_With_The_Pearl_Earring_%281665%29.jpg/800px-Johannes_Vermeer_%281632-1675%29_-_The_Girl_With_The_Pearl_Earring_%281665%29.jpg",
-    description: "신비로운 표정과 빛나는 진주 귀걸이, 그리고 이국적인 터번이 돋보이는 네덜란드 황금기 초상화입니다."
-  },
-  {
-    title: "모나리자",
-    artist: "레오나르도 다 빈치",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa_by_Leonardo_da_Vinci_from_C2RMF_retouched.jpg/800px-Mona_Lisa_by_Leonardo_da_Vinci_from_C2RMF_retouched.jpg",
-    description: "신비로운 미소와 스푸마토 기법으로 유명한 르네상스 시대의 가장 상징적인 초상화입니다."
-  },
-  {
-    title: "일출, 인상",
-    artist: "클로드 모네",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Claude_Monet%2C_Impression%2C_soleil_levant.jpg/1024px-Claude_Monet%2C_Impression%2C_soleil_levant.jpg",
-    description: "인상주의라는 명칭의 기원이 된 작품으로, 항구의 아침 풍경을 짧은 붓터치와 빛의 효과로 포착했습니다."
-  },
-  {
-    title: "아담의 창조",
-    artist: "미켈란젤로",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Michelangelo_-_Creation_of_Adam_%28cropped%29.jpg/1024px-Michelangelo_-_Creation_of_Adam_%28cropped%29.jpg",
-    description: "시스티나 성당 천장화의 일부로, 신이 아담에게 생명을 불어넣는 숭고한 순간을 표현했습니다."
-  },
-  {
-    title: "우유 따르는 여인",
-    artist: "요하네스 페르메이르",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Johannes_Vermeer_-_Het_melkmeisje_-_Google_Art_Project.jpg/800px-Johannes_Vermeer_-_Het_melkmeisje_-_Google_Art_Project.jpg",
-    description: "일상적인 가사 노동의 순간을 정교한 빛의 묘사와 질감 표현으로 승화시킨 걸작입니다."
-  }
-];
+  CheckCircle2,
+  ChevronRight,
+  UserCircle,
+  QrCode,
+  Share2,
+  Heart,
+  Star,
+  Eye
+} from 'lucide-react';
+import { motion, AnimatePresence } from 'motion/react';
+import confetti from 'canvas-confetti';
+import { QRCodeCanvas } from 'qrcode.react';
+import { firestoreService } from './lib/firestoreService';
+import { generateImageFromDescription, getAIFeedback } from './lib/gemini';
+import { Button } from './components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle, CardDescription } from './components/ui/card';
+import { Input } from './components/ui/input';
+import { Badge } from './components/ui/badge';
+import { Separator } from './components/ui/separator';
+import { Label } from './components/ui/label';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 // --- Types ---
-type View = "home" | "teacher-dashboard" | "student-join" | "student-lobby" | "game-play" | "voting" | "results";
+type Role = 'teacher' | 'student';
+type GameStatus = 'lobby' | 'describing' | 'voting' | 'results' | 'finished';
 
-interface Student {
+interface UserProfile {
+  uid: string;
+  name: string;
+  email: string;
+  role: Role;
+}
+
+interface Game {
   id: string;
-  nickname: string;
+  code: string;
+  teacherId: string;
+  status: GameStatus;
+  currentRound: number;
+  maxRounds: number;
+  artworkUrl: string;
+  artworkTitle: string;
 }
 
 interface Submission {
   id: string;
-  studentId: string;
-  nickname: string;
+  userId: string;
+  userName: string;
   description: string;
-  aiImage?: string;
-  feedback?: string;
   voteCount: number;
 }
 
-interface Session {
-  id: string;
-  artwork: {
-    url: string;
-    title: string;
-    artist: string;
-    description: string;
-  };
-  rounds: number;
-  currentRound: number;
-  status: "waiting" | "playing" | "voting" | "finished";
-  teacherId: string;
+interface RoundResult {
+  roundNumber: number;
+  winningDescription: string;
+  winningUserName: string;
+  generatedImageUrl: string;
+  aiFeedback?: string;
 }
 
-// --- Reusable Components ---
+// --- Constants ---
+const DEFAULT_ARTWORKS = [
+  { title: '별이 빛나는 밤', artist: '빈센트 반 고흐', url: 'https://images.unsplash.com/photo-1578301978693-85fa9c0320b9?q=80&w=1000&auto=format&fit=crop' },
+  { title: '진주 귀걸이를 한 소녀', artist: '요하네스 베르메르', url: 'https://images.unsplash.com/photo-1579783902614-a3fb3927b6a5?q=80&w=1000&auto=format&fit=crop' },
+  { title: '절규', artist: '에드바르트 뭉크', url: 'https://images.unsplash.com/photo-1577083552431-6e5fd01aa342?q=80&w=1000&auto=format&fit=crop' },
+  { title: '모나리자', artist: '레오나르도 다 빈치', url: 'https://images.unsplash.com/photo-1582555172866-f73bb12a2ab3?q=80&w=1000&auto=format&fit=crop' },
+  { title: '기억의 지속', artist: '살바도르 달리', url: 'https://images.unsplash.com/photo-1549490349-8643362247b5?q=80&w=1000&auto=format&fit=crop' },
+  { title: '키스', artist: '구스타프 클림트', url: 'https://images.unsplash.com/photo-1576448447660-39c20832ecb6?q=80&w=1000&auto=format&fit=crop' }
+];
 
-const Button = ({ children, onClick, className, variant = "primary", disabled = false, icon: Icon, loading = false }: any) => {
-  const variants = {
-    primary: "bg-indigo-600 text-white hover:bg-indigo-700 shadow-md",
-    secondary: "bg-white text-indigo-600 border border-indigo-100 hover:bg-indigo-50",
-    outline: "bg-transparent border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50",
-    ghost: "bg-transparent text-gray-600 hover:bg-gray-100",
-    accent: "bg-amber-400 text-amber-950 hover:bg-amber-500 shadow-sm",
-    danger: "bg-rose-500 text-white hover:bg-rose-600 shadow-sm",
+// --- Main App Component ---
+export default function App() {
+  const [user, setUser] = useState<FirebaseUser | null>(null);
+  const [profile, setProfile] = useState<UserProfile | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [currentGameId, setCurrentGameId] = useState<string | null>(null);
+  const [isCreatingGame, setIsCreatingGame] = useState(false);
+  const [view, setView] = useState<'main' | 'hallOfFame' | 'description'>('main');
+
+  const handleGoogleLogin = async (role: Role = 'teacher') => {
+    try {
+      const provider = new GoogleAuthProvider();
+      provider.setCustomParameters({ prompt: 'select_account' });
+      
+      const result = await signInWithPopup(auth, provider);
+      const u = result.user;
+      
+      const existingProfile = await firestoreService.getUser(u.uid);
+      if (!existingProfile) {
+        const newProfile: UserProfile = {
+          uid: u.uid,
+          name: u.displayName || (role === 'teacher' ? '선생님' : '학생'),
+          email: u.email || '',
+          role: role
+        };
+        await firestoreService.createUser(u.uid, newProfile);
+        setProfile(newProfile);
+      } else {
+        setProfile(existingProfile as UserProfile);
+      }
+      setView('main');
+    } catch (error: any) {
+      console.error("Google Login Error:", error);
+      if (error.code === 'auth/unauthorized-domain') {
+        alert("오류: 현재 도메인이 Firebase에 등록되지 않았습니다. Firebase 콘솔에서 도메인을 추가해 주세요.");
+      } else if (error.code === 'auth/popup-blocked') {
+        alert("팝업이 차단되었습니다. 브라우저 설정에서 팝업을 허용해 주세요.");
+      } else if (error.code !== 'auth/cancelled-popup-request') {
+        alert("로그인 중 오류가 발생했습니다: " + error.message);
+      }
+    }
+  };
+
+  useEffect(() => {
+    const unsubscribe = onAuthStateChanged(auth, async (u) => {
+      setUser(u);
+      if (u) {
+        const p = await firestoreService.getUser(u.uid);
+        if (p) {
+          setProfile(p as UserProfile);
+        } else if (u.isAnonymous) {
+          setProfile({
+            uid: u.uid,
+            name: u.displayName || '익명 학생',
+            email: '',
+            role: 'student'
+          });
+        }
+      } else {
+        setProfile(null);
+      }
+      setLoading(false);
+    });
+    return unsubscribe;
+  }, []);
+
+  const handleLogout = async () => {
+    await signOut(auth);
+    setUser(null);
+    setProfile(null);
+    setCurrentGameId(null);
+    setIsCreatingGame(false);
+    setView('main');
+  };
+
+  if (loading) {
+    return (
+      <div className="min-h-screen flex items-center justify-center bg-[#F8FAFC]">
+        <motion.div 
+          animate={{ rotate: 360 }} 
+          transition={{ repeat: Infinity, duration: 1, ease: "linear" }}
+        >
+          <Palette className="w-12 h-12 text-blue-500" />
+        </motion.div>
+      </div>
+    );
+  }
+
+  if (currentGameId && profile) {
+    return (
+      <ErrorBoundary>
+        <GameRoom 
+          gameId={currentGameId} 
+          profile={profile} 
+          onExit={() => {
+            setCurrentGameId(null);
+            setIsCreatingGame(false);
+          }} 
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  if (isCreatingGame && profile?.role === 'teacher') {
+    return (
+      <ErrorBoundary>
+        <TeacherDashboard 
+          profile={profile} 
+          onJoinGame={(id) => {
+            setCurrentGameId(id);
+            setIsCreatingGame(false);
+          }} 
+          onBack={() => setIsCreatingGame(false)}
+        />
+      </ErrorBoundary>
+    );
+  }
+
+  return (
+    <ErrorBoundary>
+      <div className="min-h-screen bg-[#F8FAFC] font-sans text-slate-900 selection:bg-blue-100">
+        {view === 'main' && (
+          <MainScreen 
+            user={user} 
+            profile={profile} 
+            onViewHallOfFame={() => setView('hallOfFame')}
+            onViewDescription={() => setView('description')}
+            onJoinGame={setCurrentGameId}
+            onCreateGame={() => setIsCreatingGame(true)}
+            onLogout={handleLogout}
+            onGoogleLogin={handleGoogleLogin}
+          />
+        )}
+        {view === 'hallOfFame' && (
+          <HallOfFame onBack={() => setView('main')} />
+        )}
+        {view === 'description' && (
+          <DescriptionPage onBack={() => setView('main')} />
+        )}
+      </div>
+    </ErrorBoundary>
+  );
+}
+
+// --- Sub-components ---
+
+function MainScreen({ 
+  user, 
+  profile, 
+  onViewHallOfFame, 
+  onViewDescription, 
+  onJoinGame,
+  onCreateGame,
+  onLogout,
+  onGoogleLogin
+}: any) {
+  const [nickname, setNickname] = useState('');
+  const [joining, setJoining] = useState(false);
+  const [code, setCode] = useState('');
+
+  const handleStudentJoin = async () => {
+    if (!nickname.trim()) return alert("닉네임을 입력해주세요.");
+    if (code.length !== 6) return alert("6자리 코드를 입력해주세요.");
+    
+    setJoining(true);
+    try {
+      const game = await firestoreService.getGameByCode(code);
+      if (game) {
+        // Students can also use Google Login for "Real" version
+        if (!user) {
+          const cred = await signInAnonymously(auth);
+          await updateProfile(cred.user, { displayName: nickname });
+        }
+        onJoinGame(game.id);
+      } else {
+        alert("유효하지 않은 코드입니다. 코드를 다시 확인해 주세요.");
+      }
+    } catch (error: any) {
+      alert("입장 중 오류가 발생했습니다: " + error.message);
+    }
+    setJoining(false);
   };
 
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled || loading}
-      className={cn(
-        "flex items-center justify-center gap-2 px-6 py-3 rounded-xl font-semibold transition-all active:scale-95 disabled:opacity-50 disabled:pointer-events-none",
-        variants[variant as keyof typeof variants],
-        className
-      )}
-    >
-      {loading ? (
-        <div className="w-5 h-5 border-2 border-current border-t-transparent rounded-full animate-spin" />
-      ) : (
-        <>
-          {Icon && <Icon size={20} />}
-          {children}
-        </>
-      )}
-    </button>
-  );
-};
+    <div className="relative min-h-screen flex flex-col overflow-hidden bg-white">
+      {/* Hero Section */}
+      <div className="relative h-[60vh] md:h-[70vh] flex items-center justify-center overflow-hidden">
+        <div className="absolute inset-0 z-0">
+          <img 
+            src="https://images.unsplash.com/photo-1547826039-bfc35e0f1ea8?q=80&w=2000&auto=format&fit=crop" 
+            alt="Art Gallery" 
+            className="w-full h-full object-cover opacity-20"
+          />
+          <div className="absolute inset-0 bg-gradient-to-b from-white/0 via-white/50 to-white" />
+        </div>
 
-const Card = ({ children, className, onClick }: any) => (
-  <div 
-    onClick={onClick}
-    className={cn("bg-white rounded-2xl shadow-xl border border-indigo-50 p-6", className)}
-  >
-    {children}
-  </div>
-);
+        <div className="relative z-10 max-w-5xl mx-auto px-6 text-center space-y-8">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            animate={{ opacity: 1, y: 0 }}
+            transition={{ duration: 0.8 }}
+          >
+            <div className="inline-flex items-center gap-2 px-6 py-2 bg-blue-600 text-white rounded-full text-sm font-black mb-8 shadow-xl shadow-blue-200">
+              <Sparkles className="w-4 h-4" />
+              실시간 미술 교육 플랫폼
+            </div>
+            <h1 className="text-7xl md:text-9xl font-black tracking-tighter text-slate-900 mb-8 leading-[0.9]">
+              ACE <span className="text-blue-600">CANVAS</span>
+            </h1>
+            <p className="text-2xl md:text-3xl text-slate-500 max-w-3xl mx-auto font-bold leading-tight">
+              학생들의 작품을 감상하고, 깊이 있는 <span className="text-slate-900 underline decoration-blue-500 decoration-4">작품평</span>을 남겨보세요.
+            </p>
+          </motion.div>
 
-const InputField = ({ label, value, onChange, placeholder, type = "text", icon: Icon, className }: any) => (
-  <div className={cn("space-y-1.5 w-full", className)}>
-    {label && <label className="text-sm font-medium text-gray-700 ml-1">{label}</label>}
-    <div className="relative">
-      {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />}
-      <input
-        type={type}
-        value={value}
-        onChange={(e) => onChange(e.target.value)}
-        placeholder={placeholder}
-        autoComplete="off"
-        className={cn(
-          "w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white text-gray-900",
-          Icon && "pl-10"
-        )}
-      />
+          <motion.div 
+            initial={{ opacity: 0 }}
+            animate={{ opacity: 1 }}
+            transition={{ delay: 0.5 }}
+            className="flex flex-wrap justify-center gap-4"
+          >
+            <Button 
+              size="lg" 
+              className="px-10 py-8 text-xl font-black rounded-3xl bg-slate-900 hover:bg-slate-800 text-white shadow-2xl transition-all hover:scale-105"
+              onClick={onViewDescription}
+            >
+              <Info className="mr-2 w-6 h-6" /> 게임 방법
+            </Button>
+            <Button 
+              size="lg" 
+              className="px-10 py-8 text-xl font-black rounded-3xl bg-blue-600 hover:bg-blue-700 text-white shadow-2xl transition-all hover:scale-105"
+              onClick={onViewHallOfFame}
+            >
+              <Trophy className="mr-2 w-6 h-6" /> 명예의 전당
+            </Button>
+          </motion.div>
+        </div>
+      </div>
+
+      {/* Login/Join Section */}
+      <div className="max-w-7xl mx-auto w-full px-6 -mt-20 relative z-20 pb-24">
+        <div className="grid md:grid-cols-2 gap-8">
+          {/* Student Card */}
+          <Card className="rounded-[3rem] border-none shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] bg-white overflow-hidden">
+            <div className="p-10 md:p-14 space-y-10">
+              <div className="space-y-2">
+                <div className="w-16 h-16 bg-blue-100 rounded-2xl flex items-center justify-center mb-6">
+                  <Play className="w-8 h-8 text-blue-600 fill-blue-600" />
+                </div>
+                <h2 className="text-4xl font-black tracking-tighter">학생으로 입장</h2>
+                <p className="text-slate-400 font-bold">코드를 입력하고 작품 감상을 시작하세요.</p>
+              </div>
+
+              <div className="space-y-6">
+                <div className="space-y-3">
+                  <Label className="text-slate-900 font-black ml-1">닉네임</Label>
+                  <Input 
+                    placeholder="이름을 입력하세요" 
+                    value={nickname} 
+                    onChange={(e) => setNickname(e.target.value)} 
+                    className="h-16 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white transition-all text-xl font-bold" 
+                  />
+                </div>
+                <div className="space-y-3">
+                  <Label className="text-slate-900 font-black ml-1">입장 코드</Label>
+                  <Input 
+                    placeholder="6자리 숫자" 
+                    value={code} 
+                    onChange={(e) => setCode(e.target.value)} 
+                    maxLength={6} 
+                    className="h-20 rounded-2xl border-2 border-slate-100 bg-slate-50 focus:bg-white transition-all text-center font-black text-4xl tracking-[0.3em] text-blue-600" 
+                  />
+                </div>
+                
+                <div className="pt-4 space-y-4">
+                  <Button 
+                    className="w-full bg-blue-600 hover:bg-blue-700 text-white py-10 rounded-3xl text-2xl font-black shadow-xl shadow-blue-100 transition-all hover:scale-[1.02]" 
+                    onClick={handleStudentJoin} 
+                    disabled={joining}
+                  >
+                    {joining ? <Loader2 className="animate-spin" /> : "게임 입장하기"}
+                  </Button>
+                  
+                  <div className="relative py-4">
+                    <div className="absolute inset-0 flex items-center"><Separator /></div>
+                    <span className="relative bg-white px-4 text-sm font-black text-slate-300 uppercase mx-auto block w-fit">또는</span>
+                  </div>
+
+                  <Button 
+                    variant="outline" 
+                    className="w-full border-2 border-slate-100 py-10 rounded-3xl text-xl font-black flex items-center justify-center gap-3 hover:bg-slate-50 transition-all" 
+                    onClick={() => onGoogleLogin('student')}
+                  >
+                    <LogIn className="w-6 h-6" /> 구글로 입장하기
+                  </Button>
+                </div>
+              </div>
+            </div>
+          </Card>
+
+          {/* Teacher Card */}
+          <Card className="rounded-[3rem] border-none shadow-[0_32px_64px_-16px_rgba(0,0,0,0.1)] bg-slate-900 text-white overflow-hidden">
+            <div className="p-10 md:p-14 h-full flex flex-col">
+              <div className="space-y-2 mb-12">
+                <div className="w-16 h-16 bg-white/10 rounded-2xl flex items-center justify-center mb-6">
+                  <Users className="w-8 h-8 text-white" />
+                </div>
+                <h2 className="text-4xl font-black tracking-tighter">선생님 메뉴</h2>
+                <p className="text-slate-400 font-bold">수업 세션을 만들고 작품을 등록하세요.</p>
+              </div>
+
+              <div className="flex-1 flex flex-col justify-center space-y-8">
+                <div className="p-8 bg-white/5 rounded-[2rem] border border-white/10">
+                  <ul className="space-y-4">
+                    <li className="flex items-center gap-3 text-lg font-bold">
+                      <CheckCircle2 className="w-6 h-6 text-blue-400" /> 실시간 작품 감상 및 토론
+                    </li>
+                    <li className="flex items-center gap-3 text-lg font-bold">
+                      <CheckCircle2 className="w-6 h-6 text-blue-400" /> AI 기반 맞춤형 피드백
+                    </li>
+                    <li className="flex items-center gap-3 text-lg font-bold">
+                      <CheckCircle2 className="w-6 h-6 text-blue-400" /> 학생 작품 업로드 및 전시
+                    </li>
+                  </ul>
+                </div>
+              </div>
+
+              <div className="mt-12 space-y-4">
+                {user && profile?.role === 'teacher' ? (
+                  <>
+                    <div className="flex items-center gap-4 p-4 bg-white/5 rounded-2xl mb-4">
+                      <div className="w-12 h-12 rounded-full bg-blue-600 flex items-center justify-center font-black text-xl">
+                        {profile.name[0]}
+                      </div>
+                      <div className="flex-1">
+                        <p className="text-xs font-black text-slate-500 uppercase tracking-widest">LOGGED IN AS</p>
+                        <p className="text-lg font-black">{profile.name} 선생님</p>
+                      </div>
+                    </div>
+                    
+                    <Button 
+                      className="w-full bg-blue-600 hover:bg-blue-700 text-white py-10 rounded-3xl text-2xl font-black shadow-2xl shadow-blue-900/20 transition-all hover:scale-[1.02]" 
+                      onClick={onCreateGame}
+                    >
+                      <Sparkles className="w-6 h-6 mr-3" />
+                      새 수업 시작하기
+                    </Button>
+
+                    <Button variant="ghost" className="w-full text-slate-500 hover:text-white font-bold" onClick={onLogout}>
+                      <LogOut className="w-4 h-4 mr-2" /> 로그아웃
+                    </Button>
+                  </>
+                ) : (
+                  <Button 
+                    className="w-full bg-white text-slate-900 hover:bg-slate-100 py-10 rounded-3xl text-2xl font-black shadow-2xl transition-all hover:scale-[1.02]" 
+                    onClick={() => onGoogleLogin('teacher')}
+                  >
+                    <LogIn className="w-7 h-7 mr-3" /> 구글 로그인
+                  </Button>
+                )}
+              </div>
+            </div>
+          </Card>
+        </div>
+      </div>
+
+      {/* Footer */}
+      <footer className="py-12 border-t border-slate-100 bg-slate-50/50">
+        <div className="max-w-7xl mx-auto px-6 flex flex-col md:flex-row justify-between items-center gap-6">
+          <div className="flex items-center gap-3">
+            <Palette className="w-8 h-8 text-blue-600" />
+            <span className="text-2xl font-black tracking-tighter">ACE CANVAS</span>
+          </div>
+          <p className="text-slate-400 font-bold">© 2026 ACE CANVAS. 즐겁게 미술감상!!</p>
+        </div>
+      </footer>
     </div>
-  </div>
-);
+  );
+}
 
-// --- Main App Component ---
-
-export default function App() {
-  const [view, setView] = useState<View>("home");
-  const [user, setUser] = useState<any>(null);
-  const [session, setSession] = useState<Session | null>(null);
-  const [students, setStudents] = useState<Student[]>([]);
-  const [submissions, setSubmissions] = useState<Submission[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [aiImage, setAiImage] = useState("");
-
-  // Student Join State
-  const [nickname, setNickname] = useState("");
-  const [joinCode, setJoinCode] = useState("");
-  
-  // Game Play State
-  const [studentDescription, setStudentDescription] = useState("");
-  const [feedback, setFeedback] = useState("");
-
-  // Teacher Dashboard State
-  const [artworkTitle, setArtworkTitle] = useState("");
-  const [artworkArtist, setArtworkArtist] = useState("");
-  const [artworkDesc, setArtworkDesc] = useState("");
-  const [artworkUrl, setArtworkUrl] = useState("");
-  const [rounds, setRounds] = useState(3);
+function TeacherDashboard({ profile, onJoinGame, onBack }: any) {
+  const [title, setTitle] = useState('');
+  const [url, setUrl] = useState('');
+  const [creating, setCreating] = useState(false);
   const [uploading, setUploading] = useState(false);
+  const [myGames, setMyGames] = useState<any[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // --- Auth & Session Sync ---
-
   useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
-      setUser(currentUser);
-      if (currentUser && view === "home") {
-        setView("teacher-dashboard");
-      }
-    });
-    return () => unsubscribe();
-  }, [view]);
-
-  useEffect(() => {
-    if (!joinCode && !session?.id) return;
-    const sessionId = session?.id || joinCode.toUpperCase();
-    
-    const unsubSession = onSnapshot(doc(db, "sessions", sessionId), (docSnap) => {
-      if (docSnap.exists()) {
-        const data = docSnap.data() as Session;
-        setSession({ ...data, id: docSnap.id });
-        
-        // View auto-routing based on session status
-        if (data.status === "playing" && view !== "game-play") setView("game-play");
-        if (data.status === "voting" && view !== "voting") setView("voting");
-        if (data.status === "finished" && view !== "results") setView("results");
-      }
-    });
-
-    const unsubStudents = onSnapshot(collection(db, "sessions", sessionId, "students"), (snapshot) => {
-      setStudents(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Student)));
-    });
-
-    const unsubSubmissions = onSnapshot(collection(db, "sessions", sessionId, "submissions"), (snapshot) => {
-      setSubmissions(snapshot.docs.map(d => ({ id: d.id, ...d.data() } as Submission)));
-    });
-
-    return () => {
-      unsubSession();
-      unsubStudents();
-      unsubSubmissions();
+    const fetchGames = async () => {
+      const games = await firestoreService.getTeacherGames(profile.uid);
+      if (games) setMyGames(games);
     };
-  }, [session?.id, joinCode, view]);
+    fetchGames();
+  }, [profile.uid]);
 
-  // --- Handlers ---
+  const handleCreate = async (selectedArt?: typeof DEFAULT_ARTWORKS[0]) => {
+    const finalTitle = selectedArt?.title || title;
+    const finalUrl = selectedArt?.url || url;
 
-  const handleTeacherLogin = async () => {
+    if (!finalTitle || !finalUrl) return alert("작품을 선택하거나 이미지를 업로드해 주세요.");
+    
+    setCreating(true);
     try {
-      await signInWithPopup(auth, googleProvider);
-      setView("teacher-dashboard");
-    } catch (error) {
-      console.error("Login failed", error);
-      alert("로그인에 실패했습니다.");
+      const code = Math.floor(100000 + Math.random() * 900000).toString();
+      const id = await firestoreService.createGame({
+        code,
+        teacherId: profile.uid,
+        status: 'lobby',
+        currentRound: 1,
+        maxRounds: 1, // Simplified for "Real" version
+        artworkUrl: finalUrl,
+        artworkTitle: finalTitle
+      });
+      if (id) onJoinGame(id);
+    } finally {
+      setCreating(false);
     }
   };
 
   const handleFileUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
-    if (!file || !user) return;
+    if (!file) return;
 
     setUploading(true);
     try {
-      const storageRef = ref(storage, `artworks/${user.uid}/${Date.now()}_${file.name}`);
+      const storageRef = ref(storage, `artworks/${profile.uid}/${Date.now()}_${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
-      const url = await getDownloadURL(snapshot.ref);
-      setArtworkUrl(url);
-      console.log("File uploaded successfully:", url);
+      const downloadUrl = await getDownloadURL(snapshot.ref);
+      setUrl(downloadUrl);
+      setTitle(file.name.split('.')[0]);
     } catch (error) {
-      console.error("Upload failed:", error);
-      alert("이미지 업로드에 실패했습니다. Firebase 설정을 확인해 주세요.");
+      console.error("Upload error:", error);
+      alert("이미지 업로드에 실패했습니다.");
     } finally {
       setUploading(false);
     }
   };
 
-  const handleCreateSession = async () => {
-    if (!artworkUrl || !artworkTitle || !user) {
-      alert("작품 제목과 이미지가 필요합니다.");
-      return;
-    }
-    setLoading(true);
-    const sessionId = Math.random().toString(36).substring(2, 8).toUpperCase();
-    
-    const sessionData: Session = {
-      id: sessionId,
-      teacherId: user.uid,
-      status: "waiting",
-      artwork: { url: artworkUrl, title: artworkTitle, artist: artworkArtist, description: artworkDesc },
-      rounds,
-      currentRound: 1
-    };
-
-    try {
-      await setDoc(doc(db, "sessions", sessionId), {
-        ...sessionData,
-        createdAt: serverTimestamp()
-      });
-      setSession(sessionData);
-    } catch (error) {
-      console.error("Session creation failed", error);
-      alert("세션 생성 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleJoinSession = async () => {
-    if (!joinCode || !nickname) {
-      alert("닉네임과 접속 코드를 입력해 주세요.");
-      return;
-    }
-    setLoading(true);
-    const sessionId = joinCode.toUpperCase();
-    try {
-      const sessionDoc = await getDoc(doc(db, "sessions", sessionId));
-      if (sessionDoc.exists()) {
-        const studentId = Math.random().toString(36).substring(2, 10);
-        await setDoc(doc(db, "sessions", sessionId, "students", studentId), {
-          nickname,
-          joinedAt: serverTimestamp()
-        });
-        setSession({ id: sessionId, ...sessionDoc.data() } as Session);
-        setView("student-lobby");
-      } else {
-        alert("유효하지 않은 접속 코드입니다.");
-      }
-    } catch (error) {
-      console.error("Join failed", error);
-      alert("참여 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStartGame = async () => {
-    if (session) {
-      await updateDoc(doc(db, "sessions", session.id), { status: "playing" });
-    }
-  };
-
-  const handleSubmitDescription = async () => {
-    if (!studentDescription || !session) return;
-    setLoading(true);
-    
-    try {
-      const aiFeedback = await getFeedback(session.artwork.description, studentDescription);
-      setFeedback(aiFeedback || "");
-      
-      await addDoc(collection(db, "sessions", session.id, "submissions"), {
-        studentId: auth.currentUser?.uid || "anonymous",
-        nickname: nickname || "익명",
-        description: studentDescription,
-        voteCount: 0,
-        createdAt: serverTimestamp()
-      });
-    } catch (error) {
-      console.error("Submission failed", error);
-      alert("제출 중 오류가 발생했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  const handleStartVoting = async () => {
-    if (session) {
-      await updateDoc(doc(db, "sessions", session.id), { status: "voting" });
-    }
-  };
-
-  const handleCastVote = async (submissionId: string) => {
-    if (session) {
-      await updateDoc(doc(db, "sessions", session.id, "submissions", submissionId), {
-        voteCount: increment(1)
-      });
-      setView("results");
-    }
-  };
-
-  const handleGenerateImage = async (desc: string) => {
-    setLoading(true);
-    try {
-      const img = await generateAIImage(desc);
-      setAiImage(img);
-      confetti({
-        particleCount: 150,
-        spread: 70,
-        origin: { y: 0.6 }
-      });
-    } catch (error) {
-      console.error("AI Image Generation failed", error);
-      alert("이미지 생성에 실패했습니다.");
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  // --- View Components ---
-
-  const HomeView = () => (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-amber-50 flex flex-col items-center justify-center p-6">
-      <motion.div 
-        initial={{ opacity: 0, y: 20 }}
-        animate={{ opacity: 1, y: 0 }}
-        className="max-w-4xl w-full text-center space-y-12"
-      >
-        <div className="space-y-4">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-100 text-indigo-700 text-sm font-bold tracking-wider uppercase">
-            <Sparkles size={16} />
-            AI-Powered Art Education
-          </div>
-          <h1 className="text-6xl md:text-8xl font-black text-indigo-950 tracking-tight">
-            ACE <span className="text-indigo-600">CANVAS</span>
-          </h1>
-          <p className="text-xl text-gray-600 max-w-2xl mx-auto leading-relaxed">
-            미술 작품을 깊이 감상하고 구체적으로 표현하는 즐거움. 
-            AI와 함께하는 실시간 감상 게임에 참여해 보세요.
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 gap-6 max-w-2xl mx-auto">
-          <Card className="hover:scale-105 transition-transform cursor-pointer group" onClick={handleTeacherLogin}>
-            <div className="h-16 w-16 rounded-2xl bg-indigo-600 text-white flex items-center justify-center mb-6 group-hover:rotate-6 transition-transform">
-              <Palette size={32} />
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-2 text-left">교사로 시작하기</h3>
-            <p className="text-gray-500 mb-6 text-left">Google 로그인으로 세션을 생성하고 학생들과 함께하세요.</p>
-            <Button variant="ghost" className="w-full" icon={LogIn}>Google 로그인</Button>
-          </Card>
-
-          <Card className="hover:scale-105 transition-transform cursor-pointer group" onClick={() => setView("student-join")}>
-            <div className="h-16 w-16 rounded-2xl bg-amber-400 text-amber-950 flex items-center justify-center mb-6 group-hover:rotate-6 transition-transform">
-              <Users size={32} />
-            </div>
-            <h3 className="text-2xl font-bold text-gray-900 mb-2 text-left">학생으로 참여하기</h3>
-            <p className="text-gray-500 mb-6 text-left">코드를 입력하고 친구들과 함께 작품을 묘사해 보세요.</p>
-            <Button variant="ghost" className="w-full" icon={ChevronRight}>참여하기</Button>
-          </Card>
-        </div>
-      </motion.div>
-    </div>
-  );
-
-  const TeacherDashboardView = () => (
-    <div className="min-h-screen bg-gray-50 p-8 text-left">
-      <div className="max-w-6xl mx-auto space-y-8">
-        <div className="flex items-center justify-between">
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] py-12 px-6">
+      <div className="max-w-6xl mx-auto">
+        <div className="flex items-center justify-between mb-16">
           <div className="flex items-center gap-4">
-            <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("home")} className="p-2">뒤로가기</Button>
-            {user?.photoURL && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-indigo-200" referrerPolicy="no-referrer" />}
-            <div>
-              <h1 className="text-xl font-bold text-indigo-950">{user?.displayName} 선생님</h1>
-              <p className="text-xs text-gray-500">{user?.email}</p>
-            </div>
+            <Button variant="ghost" onClick={onBack} className="rounded-full w-14 h-14 p-0 hover:bg-white shadow-sm">
+              <ArrowRight className="rotate-180 w-7 h-7" />
+            </Button>
+            <h2 className="text-5xl font-black tracking-tighter">수업 준비</h2>
           </div>
-          <Button variant="outline" onClick={() => auth.signOut().then(() => setView("home"))}>로그아웃</Button>
+          <Badge className="bg-slate-900 text-white px-8 py-3 rounded-full text-base font-black shadow-lg">선생님 모드</Badge>
         </div>
 
-        <div className="grid lg:grid-cols-3 gap-8">
-          <div className="lg:col-span-2 space-y-6">
-            <Card className="space-y-6">
-              <div className="flex items-center justify-between">
-                <h3 className="text-xl font-bold flex items-center gap-2"><ImageIcon className="text-indigo-600" /> 작품 선택 및 업로드</h3>
+        <div className="grid lg:grid-cols-5 gap-12">
+          {/* Left: Default Artworks (3/5) */}
+          <div className="lg:col-span-3 space-y-8">
+            <div className="flex items-center gap-3 mb-8">
+              <Sparkles className="text-blue-600 w-8 h-8" />
+              <h3 className="text-3xl font-black tracking-tight">추천 작품 선택</h3>
+            </div>
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-6">
+              {DEFAULT_ARTWORKS.map((art, i) => (
+                <motion.div 
+                  key={i} 
+                  whileHover={{ y: -8, scale: 1.02 }}
+                  className="group cursor-pointer"
+                  onClick={() => handleCreate(art)}
+                >
+                  <Card className="overflow-hidden rounded-[2.5rem] border-none shadow-xl group-hover:shadow-[0_32px_64px_-16px_rgba(0,0,0,0.15)] transition-all">
+                    <div className="aspect-[3/4] relative">
+                      <img 
+                        src={art.url} 
+                        alt={art.title} 
+                        className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-1000" 
+                        referrerPolicy="no-referrer" 
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/90 via-black/20 to-transparent opacity-60 group-hover:opacity-80 transition-opacity" />
+                      <div className="absolute bottom-0 left-0 right-0 p-8 text-white">
+                        <p className="text-xs font-black text-blue-400 mb-2 uppercase tracking-[0.2em]">{art.artist}</p>
+                        <p className="text-xl font-black leading-tight">{art.title}</p>
+                      </div>
+                      <div className="absolute inset-0 flex items-center justify-center opacity-0 group-hover:opacity-100 transition-opacity">
+                        <div className="w-16 h-16 bg-white rounded-full flex items-center justify-center shadow-2xl">
+                          <Play className="text-blue-600 w-8 h-8 fill-blue-600 ml-1" />
+                        </div>
+                      </div>
+                    </div>
+                  </Card>
+                </motion.div>
+              ))}
+            </div>
+          </div>
+
+          {/* Right: Custom Upload (2/5) */}
+          <div className="lg:col-span-2 space-y-8">
+            <div className="flex items-center gap-3 mb-8">
+              <Camera className="text-slate-900 w-8 h-8" />
+              <h3 className="text-3xl font-black tracking-tight">학생 작품 등록</h3>
+            </div>
+            <Card className="p-10 rounded-[3rem] shadow-2xl border-none bg-white">
+              <div className="space-y-10">
+                <div 
+                  className="aspect-square rounded-[2.5rem] border-4 border-dashed border-slate-100 flex flex-col items-center justify-center cursor-pointer hover:bg-slate-50 transition-all overflow-hidden relative group"
+                  onClick={() => fileInputRef.current?.click()}
+                >
+                  {url ? (
+                    <>
+                      <img src={url} alt="Preview" className="w-full h-full object-cover" />
+                      <div className="absolute inset-0 bg-black/60 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center">
+                        <div className="bg-white text-slate-900 px-6 py-3 rounded-full font-black shadow-xl">이미지 변경</div>
+                      </div>
+                    </>
+                  ) : (
+                    <>
+                      <div className="w-20 h-20 bg-slate-100 rounded-3xl flex items-center justify-center mb-6 group-hover:scale-110 transition-transform shadow-sm">
+                        <Camera className="w-10 h-10 text-slate-400" />
+                      </div>
+                      <p className="text-slate-900 font-black text-xl">작품 불러오기</p>
+                      <p className="text-slate-400 font-bold mt-2">학생의 작품을 직접 올려보세요!</p>
+                    </>
+                  )}
+                  {uploading && (
+                    <div className="absolute inset-0 bg-white/95 flex items-center justify-center">
+                      <div className="flex flex-col items-center gap-4">
+                        <Loader2 className="animate-spin text-blue-600 w-12 h-12" />
+                        <p className="font-black text-slate-900">업로드 중...</p>
+                      </div>
+                    </div>
+                  )}
+                </div>
                 <input 
                   type="file" 
                   ref={fileInputRef} 
-                  onChange={handleFileUpload} 
                   className="hidden" 
-                  accept="image/*"
+                  accept="image/*" 
+                  onChange={handleFileUpload} 
                 />
-                <Button 
-                  variant="secondary" 
-                  icon={Upload} 
-                  onClick={() => fileInputRef.current?.click()}
-                  loading={uploading}
-                >
-                  이미지 불러오기
-                </Button>
-              </div>
 
-              <div className="space-y-4">
-                <p className="text-sm font-medium text-gray-500">추천 작품 선택</p>
-                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
-                  {PRESET_ARTWORKS.map((preset, idx) => (
-                    <div 
-                      key={idx}
-                      onClick={() => {
-                        setArtworkTitle(preset.title);
-                        setArtworkArtist(preset.artist);
-                        setArtworkUrl(preset.url);
-                        setArtworkDesc(preset.description);
-                      }}
-                      className={cn(
-                        "relative aspect-video rounded-xl overflow-hidden cursor-pointer border-4 transition-all",
-                        artworkUrl === preset.url ? "border-indigo-600 scale-95" : "border-transparent hover:border-indigo-200"
-                      )}
+                <div className="space-y-8">
+                  <div className="space-y-3">
+                    <Label className="font-black text-slate-900 text-lg ml-1">작품 제목</Label>
+                    <Input 
+                      placeholder="작품의 이름을 입력하세요" 
+                      value={title} 
+                      onChange={e => setTitle(e.target.value)} 
+                      className="h-16 rounded-2xl bg-slate-50 border-none text-xl font-bold px-6" 
+                    />
+                  </div>
+                  <Button 
+                    className="w-full py-10 text-2xl rounded-3xl bg-slate-900 hover:bg-slate-800 text-white font-black shadow-2xl transition-all hover:scale-[1.02]" 
+                    onClick={() => handleCreate()} 
+                    disabled={creating || uploading || !url}
+                  >
+                    {creating ? <Loader2 className="animate-spin" /> : "이 작품으로 수업 시작"}
+                  </Button>
+                </div>
+              </div>
+            </Card>
+
+            {myGames.length > 0 && (
+              <div className="pt-8 space-y-6">
+                <div className="flex items-center gap-2">
+                  <Play className="w-6 h-6 text-slate-400" />
+                  <h4 className="text-xl font-black text-slate-900">최근 진행한 수업</h4>
+                </div>
+                <div className="space-y-3">
+                  {myGames.map((g) => (
+                    <Card 
+                      key={g.id} 
+                      className="p-4 rounded-2xl border-none shadow-md bg-white flex items-center justify-between group cursor-pointer hover:bg-slate-50 transition-all"
+                      onClick={() => onJoinGame(g.id)}
                     >
-                      <img src={preset.url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
-                      <div className="absolute inset-0 bg-black/40 flex items-end p-2">
-                        <p className="text-[10px] text-white font-bold truncate">{preset.title}</p>
+                      <div className="flex items-center gap-4">
+                        <img src={g.artworkUrl} className="w-12 h-12 rounded-lg object-cover" />
+                        <div>
+                          <p className="font-black text-slate-900">{g.artworkTitle}</p>
+                          <p className="text-xs font-bold text-slate-400">코드: {g.code}</p>
+                        </div>
                       </div>
-                    </div>
+                      <ArrowRight className="w-5 h-5 text-slate-200 group-hover:text-blue-600 transition-colors" />
+                    </Card>
                   ))}
                 </div>
               </div>
-
-              <div className="grid md:grid-cols-2 gap-4">
-                <InputField label="작품 제목" value={artworkTitle} onChange={setArtworkTitle} placeholder="예: 별이 빛나는 밤" />
-                <InputField label="작가 이름" value={artworkArtist} onChange={setArtworkArtist} placeholder="예: 빈센트 반 고흐" />
-              </div>
-              
-              {artworkUrl && (
-                <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-indigo-100 bg-white">
-                  <img src={artworkUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
-                  <button 
-                    onClick={() => setArtworkUrl("")}
-                    className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full hover:bg-black/70"
-                  >
-                    <X size={16} />
-                  </button>
-                </div>
-              )}
-
-              <div className="space-y-1.5">
-                <label className="text-sm font-medium text-gray-700 ml-1 block">작품 설명 (AI 분석용)</label>
-                <textarea 
-                  value={artworkDesc}
-                  onChange={(e) => setArtworkDesc(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-32 bg-white text-gray-900"
-                  placeholder="작품의 특징, 색감, 구도 등을 자세히 적어주세요."
-                />
-              </div>
-            </Card>
-          </div>
-
-          <div className="space-y-6">
-            <Card className="space-y-6">
-              <h3 className="text-xl font-bold flex items-center gap-2"><Timer className="text-indigo-600" /> 라운드 설정</h3>
-              <div className="flex items-center justify-between bg-indigo-50 p-4 rounded-xl">
-                <span className="font-bold text-indigo-900">{rounds} 라운드</span>
-                <div className="flex gap-2">
-                  <button onClick={() => setRounds(Math.max(1, rounds - 1))} className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center">-</button>
-                  <button onClick={() => setRounds(rounds + 1)} className="w-8 h-8 rounded-lg bg-white border border-indigo-200 flex items-center justify-center">+</button>
-                </div>
-              </div>
-              <Button className="w-full py-4 text-lg" onClick={handleCreateSession} loading={loading}>게임 세션 생성</Button>
-            </Card>
-
-            {session && (
-              <Card className="bg-indigo-900 text-white space-y-6">
-                <div className="text-center space-y-2">
-                  <p className="text-indigo-300 text-sm font-bold uppercase tracking-widest">접속 코드</p>
-                  <h2 className="text-5xl font-black tracking-tighter">{session.id}</h2>
-                </div>
-                <div className="flex justify-center p-4 bg-white rounded-2xl">
-                  <QRCodeSVG value={`${window.location.origin}?code=${session.id}`} size={150} />
-                </div>
-                <div className="space-y-4">
-                  <div className="flex items-center justify-between text-sm">
-                    <span>참여 학생</span>
-                    <span className="font-bold">{students.length}명</span>
-                  </div>
-                  <Button variant="accent" className="w-full text-amber-950" onClick={handleStartGame}>게임 시작</Button>
-                </div>
-              </Card>
             )}
           </div>
         </div>
       </div>
     </div>
   );
+}
 
-  const StudentJoinView = () => (
-    <div className="min-h-screen bg-amber-50 flex items-center justify-center p-6">
-      <Card className="max-w-md w-full space-y-8 p-10 relative">
-        <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("home")} className="absolute top-4 left-4 p-2">뒤로가기</Button>
-        <div className="text-center space-y-2 pt-8">
-          <h2 className="text-3xl font-bold text-gray-900">게임 참여하기</h2>
-          <p className="text-gray-500">닉네임과 접속 코드를 입력하세요.</p>
-        </div>
-        <div className="space-y-4">
-          <InputField label="닉네임" value={nickname} onChange={setNickname} placeholder="멋진 예술가" icon={User} />
-          <InputField label="접속 코드" value={joinCode} onChange={setJoinCode} placeholder="ABCDEF" icon={Palette} />
-          <Button variant="accent" className="w-full mt-4 text-amber-950" onClick={handleJoinSession} loading={loading}>입장하기</Button>
-        </div>
-      </Card>
-    </div>
-  );
+function GameRoom({ gameId, profile, onExit }: any) {
+  const isTeacher = profile.role === 'teacher';
+  const [game, setGame] = useState<Game | null>(null);
+  const [submissions, setSubmissions] = useState<Submission[]>([]);
+  const [results, setResults] = useState<RoundResult[]>([]);
+  const [mySubmission, setMySubmission] = useState('');
+  const [hasSubmitted, setHasSubmitted] = useState(false);
+  const [hasVoted, setHasVoted] = useState(false);
+  const [processing, setProcessing] = useState(false);
+  const [copied, setCopied] = useState(false);
+  const [showQR, setShowQR] = useState(false);
 
-  const StudentLobbyView = () => (
-    <div className="min-h-screen bg-indigo-600 flex flex-col items-center justify-center p-6 text-white text-center relative">
-      <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("student-join")} className="absolute top-6 left-6 text-white hover:bg-white/10 p-2">뒤로가기</Button>
-      <motion.div 
-        animate={{ scale: [1, 1.1, 1] }}
-        transition={{ repeat: Infinity, duration: 2 }}
-        className="mb-8"
-      >
-        <Users size={80} />
-      </motion.div>
-      <h2 className="text-4xl font-black mb-4">대기실 입장 완료!</h2>
-      <p className="text-xl text-indigo-100 mb-8">선생님이 게임을 시작할 때까지 잠시만 기다려 주세요.</p>
-      <div className="bg-indigo-500/30 px-6 py-3 rounded-full font-bold">
-        참여 코드: {session?.id}
-      </div>
-    </div>
-  );
+  useEffect(() => {
+    if (!gameId) return;
+    const unsubGame = firestoreService.subscribeToGame(gameId, setGame);
+    const unsubResults = firestoreService.subscribeToResults(gameId, setResults);
+    return () => { unsubGame(); unsubResults(); };
+  }, [gameId]);
 
-  const GamePlayView = () => (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b p-4 flex items-center justify-between px-8 shadow-sm">
-        <div className="flex items-center gap-4">
-          <div className="bg-indigo-100 text-indigo-700 px-3 py-1 rounded-lg font-bold text-sm">ROUND {session?.currentRound}</div>
-          <h2 className="font-bold text-gray-900">{session?.artwork.title} - {session?.artwork.artist}</h2>
+  useEffect(() => {
+    if (game && game.status !== 'lobby' && game.status !== 'finished') {
+      return firestoreService.subscribeToSubmissions(gameId, game.currentRound, setSubmissions);
+    }
+  }, [gameId, game?.status, game?.currentRound]);
+
+  const handleNextPhase = async () => {
+    if (!game || processing) return;
+    setProcessing(true);
+    try {
+      let nextStatus = game.status;
+      let nextRound = game.currentRound;
+
+      if (game.status === 'lobby') nextStatus = 'describing';
+      else if (game.status === 'describing') nextStatus = 'voting';
+      else if (game.status === 'voting') nextStatus = 'results';
+      else if (game.status === 'results') {
+        if (game.currentRound < game.maxRounds) {
+          nextStatus = 'describing';
+          nextRound++;
+        } else {
+          nextStatus = 'finished';
+        }
+      }
+      await firestoreService.updateGame(gameId, { status: nextStatus, currentRound: nextRound });
+      setHasSubmitted(false);
+      setHasVoted(false);
+      setMySubmission('');
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const handleSubmit = async () => {
+    if (!mySubmission.trim() || hasSubmitted) return;
+    await firestoreService.submitDescription(gameId, {
+      roundNumber: game?.currentRound,
+      userId: profile.uid,
+      userName: profile.name,
+      description: mySubmission
+    });
+    setHasSubmitted(true);
+  };
+
+  const handleVote = async (subId: string) => {
+    if (hasVoted) return;
+    await firestoreService.voteForSubmission(gameId, subId);
+    setHasVoted(true);
+  };
+
+  const handleGenerateAI = async () => {
+    if (!game || processing) return;
+    setProcessing(true);
+    try {
+      const winner = [...submissions].sort((a, b) => b.voteCount - a.voteCount)[0];
+      if (winner) {
+        const imgUrl = await generateImageFromDescription(winner.description, game.artworkUrl);
+        const feedback = await getAIFeedback(winner.description, game.artworkUrl);
+        await firestoreService.saveResult(gameId, {
+          roundNumber: game.currentRound,
+          winningDescription: winner.description,
+          winningUserName: winner.userName,
+          generatedImageUrl: imgUrl || game.artworkUrl,
+          aiFeedback: feedback
+        });
+        confetti({ particleCount: 150, spread: 70, origin: { y: 0.6 } });
+      }
+    } finally {
+      setProcessing(false);
+    }
+  };
+
+  const copyCode = () => {
+    if (!game) return;
+    navigator.clipboard.writeText(game.code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  if (!game) return <div className="min-h-screen flex items-center justify-center"><Loader2 className="animate-spin text-blue-600" /></div>;
+
+  const joinUrl = `${window.location.origin}?code=${game.code}`;
+
+  return (
+    <div className="min-h-screen bg-white flex flex-col">
+      {/* Game Header */}
+      <header className="border-b px-8 py-6 flex justify-between items-center sticky top-0 bg-white/90 backdrop-blur-xl z-50">
+        <div className="flex items-center gap-8">
+          <Button variant="ghost" size="icon" onClick={onExit} className="rounded-full w-12 h-12 hover:bg-slate-50">
+            <ArrowRight className="rotate-180 w-6 h-6" />
+          </Button>
+          <div className="flex flex-col">
+            <h1 className="font-black text-2xl tracking-tight text-slate-900">{game.artworkTitle}</h1>
+            <div className="flex items-center gap-3">
+              <Badge className="bg-blue-600 text-[10px] font-black uppercase tracking-widest px-3 py-1">ROUND {game.currentRound}</Badge>
+              <span className="text-xs text-slate-400 font-black uppercase tracking-widest">{game.status}</span>
+            </div>
+          </div>
         </div>
-        <div className="flex items-center gap-2 text-gray-500 font-medium">
-          <Timer size={18} /> 실시간 진행 중
-        </div>
+
+        {isTeacher && (
+          <div className="flex items-center gap-6">
+            <div className="flex items-center gap-2">
+              <Button 
+                variant="outline" 
+                className="rounded-2xl border-2 border-slate-100 font-black"
+                onClick={() => setShowQR(!showQR)}
+              >
+                <QrCode className="w-5 h-5 mr-2" /> QR 코드
+              </Button>
+              <div 
+                className="flex items-center gap-4 bg-slate-50 px-6 py-3 rounded-2xl cursor-pointer hover:bg-slate-100 transition-all border border-slate-100"
+                onClick={copyCode}
+              >
+                <span className="text-xs font-black text-slate-400 uppercase tracking-widest">JOIN CODE</span>
+                <span className="text-3xl font-black text-blue-600 tracking-[0.2em]">{game.code}</span>
+                {copied ? <CheckCircle2 className="w-5 h-5 text-green-500" /> : <Copy className="w-5 h-5 text-slate-300" />}
+              </div>
+            </div>
+            <Button 
+              onClick={handleNextPhase} 
+              disabled={processing}
+              className="bg-slate-900 text-white px-10 py-7 rounded-2xl font-black text-xl shadow-2xl shadow-slate-200 transition-all hover:scale-105"
+            >
+              {processing ? <Loader2 className="animate-spin" /> : "다음 단계로"}
+              <ChevronRight className="ml-2 w-6 h-6" />
+            </Button>
+          </div>
+        )}
       </header>
 
-      <main className="flex-1 grid lg:grid-cols-2 gap-8 p-8 overflow-hidden">
-        <div className="h-full flex flex-col gap-4">
-          <div className="flex-1 bg-white rounded-3xl overflow-hidden shadow-lg border border-gray-100 relative group">
-            <img 
-              src={session?.artwork.url} 
-              alt="Artwork" 
-              className="w-full h-full object-contain p-4"
-              referrerPolicy="no-referrer"
-            />
-          </div>
-        </div>
+      <main className="flex-1 p-8 max-w-7xl mx-auto w-full">
+        <AnimatePresence mode="wait">
+          {game.status === 'lobby' && (
+            <motion.div 
+              key="lobby"
+              initial={{ opacity: 0, y: 30 }}
+              animate={{ opacity: 1, y: 0 }}
+              exit={{ opacity: 0, scale: 0.95 }}
+              className="text-center py-20 space-y-16"
+            >
+              <div className="space-y-6">
+                <h2 className="text-6xl md:text-8xl font-black tracking-tighter text-slate-900">학생들을 기다리고 있어요</h2>
+                <p className="text-2xl text-slate-400 font-bold">아래 코드를 입력하거나 QR 코드를 스캔하세요!</p>
+              </div>
 
-        <div className="flex flex-col gap-6">
-          <Card className="flex-1 flex flex-col gap-4">
-            <h3 className="text-xl font-bold flex items-center gap-2 text-left"><MessageSquare className="text-indigo-600" /> 작품 묘사하기</h3>
-            <p className="text-gray-500 text-sm text-left">작품의 색감, 형태, 분위기를 자유롭게, 구체적으로 설명해 보세요.</p>
-            <textarea 
-              value={studentDescription}
-              onChange={(e) => setStudentDescription(e.target.value)}
-              className="flex-1 w-full p-4 rounded-2xl border-2 border-indigo-50 focus:border-indigo-500 focus:outline-none text-lg resize-none min-h-[250px] bg-white text-gray-900 shadow-inner"
-              placeholder="여기에 묘사 내용을 자유롭게 입력하세요... 글자 수 제한 없이 마음껏 표현해 보세요!"
-              spellCheck="false"
-            />
-            <Button className="w-full py-4" onClick={handleSubmitDescription} loading={loading}>제출하기</Button>
-          </Card>
-
-          <AnimatePresence>
-            {feedback && (
-              <motion.div 
-                initial={{ opacity: 0, y: 20 }}
-                animate={{ opacity: 1, y: 0 }}
-                className="bg-indigo-900 text-white p-6 rounded-3xl shadow-xl relative overflow-hidden"
-              >
-                <div className="absolute top-0 right-0 p-4 opacity-10"><Sparkles size={80} /></div>
-                <h4 className="font-bold mb-2 flex items-center gap-2"><Sparkles size={18} className="text-amber-400" /> AI 피드백</h4>
-                <p className="text-indigo-100 leading-relaxed text-left">{feedback}</p>
-                {user?.uid === session?.teacherId && (
-                  <div className="mt-4 flex justify-end">
-                    <Button variant="accent" className="text-xs py-2 px-4" onClick={handleStartVoting}>투표 단계로 이동</Button>
+              <div className="flex flex-col md:flex-row items-center justify-center gap-12">
+                <div className="relative group">
+                  <div className="absolute inset-0 bg-blue-600 blur-[100px] opacity-10 group-hover:opacity-20 transition-opacity" />
+                  <div 
+                    className="relative bg-white border-4 border-slate-100 p-16 rounded-[4rem] shadow-[0_64px_128px_-32px_rgba(0,0,0,0.1)] cursor-pointer transform transition-all hover:scale-105 active:scale-95"
+                    onClick={copyCode}
+                  >
+                    <p className="text-sm uppercase tracking-[0.5em] font-black mb-6 text-slate-400">입장 코드</p>
+                    <p className="text-[10rem] font-black tracking-[0.1em] text-blue-600 leading-none">{game.code}</p>
                   </div>
+                </div>
+
+                <div className="bg-white p-12 rounded-[4rem] shadow-[0_64px_128px_-32px_rgba(0,0,0,0.1)] border-4 border-slate-100 flex flex-col items-center gap-6">
+                  <QRCodeCanvas value={joinUrl} size={240} level="H" includeMargin={true} />
+                  <div className="text-center">
+                    <p className="font-black text-xl text-slate-900">QR 코드로 입장</p>
+                    <p className="text-slate-400 font-bold text-sm">스마트폰 카메라로 스캔하세요!</p>
+                  </div>
+                </div>
+              </div>
+
+              {isTeacher && (
+                <div className="pt-12">
+                  <Button 
+                    size="lg" 
+                    onClick={handleNextPhase} 
+                    className="px-20 py-12 text-4xl font-black rounded-[3rem] bg-blue-600 hover:bg-blue-700 shadow-2xl shadow-blue-200 transition-all hover:scale-105"
+                  >
+                    수업 시작하기
+                  </Button>
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {game.status === 'describing' && (
+            <motion.div 
+              key="describing"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="grid lg:grid-cols-2 gap-20 items-start py-10"
+            >
+              <div className="space-y-8">
+                <div className="flex items-center gap-4">
+                  <div className="w-12 h-12 bg-blue-600 rounded-2xl flex items-center justify-center text-white text-2xl font-black shadow-lg">1</div>
+                  <h2 className="text-4xl font-black tracking-tight text-slate-900">작품을 감상하고 평을 남겨주세요</h2>
+                </div>
+                <Card className="overflow-hidden rounded-[4rem] shadow-[0_48px_96px_-24px_rgba(0,0,0,0.15)] border-none relative group">
+                  <img src={game.artworkUrl} alt="Art" className="w-full aspect-[4/5] object-cover" referrerPolicy="no-referrer" />
+                  <div className="absolute inset-0 bg-gradient-to-t from-black/20 to-transparent" />
+                  <div className="absolute bottom-8 left-8 right-8 flex justify-between items-center">
+                    <Badge className="bg-white/90 text-slate-900 backdrop-blur-md px-4 py-2 rounded-full font-black shadow-xl">
+                      <Eye className="w-4 h-4 mr-2" /> 자세히 보기
+                    </Badge>
+                  </div>
+                </Card>
+              </div>
+
+              <div className="space-y-10 lg:pt-20">
+                {!hasSubmitted ? (
+                  <div className="space-y-8">
+                    <div className="bg-slate-50 p-10 rounded-[3rem] border-4 border-slate-100 focus-within:border-blue-500 focus-within:bg-white transition-all shadow-inner">
+                      <textarea 
+                        className="w-full h-80 bg-transparent border-none text-2xl font-bold focus:ring-0 resize-none placeholder:text-slate-300 leading-relaxed"
+                        placeholder="이 작품을 보고 느껴지는 감정, 색채의 특징, 작가의 의도 등을 자유롭게 서술해 보세요. 친구들이 그림을 상상할 수 있게 생생하게 적어주세요!"
+                        value={mySubmission}
+                        onChange={(e) => setMySubmission(e.target.value)}
+                      />
+                    </div>
+                    <Button 
+                      className="w-full py-12 text-3xl font-black rounded-[2.5rem] bg-blue-600 hover:bg-blue-700 shadow-2xl shadow-blue-100 transition-all hover:scale-[1.02]" 
+                      onClick={handleSubmit}
+                    >
+                      작품평 제출하기
+                    </Button>
+                  </div>
+                ) : (
+                  <motion.div 
+                    initial={{ scale: 0.9, opacity: 0 }}
+                    animate={{ scale: 1, opacity: 1 }}
+                    className="bg-green-50 text-green-600 p-20 rounded-[4rem] text-center space-y-6 border-4 border-green-100"
+                  >
+                    <div className="w-24 h-24 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-6">
+                      <CheckCircle2 className="w-14 h-14" />
+                    </div>
+                    <h3 className="text-4xl font-black tracking-tight">제출 완료!</h3>
+                    <p className="text-xl font-bold opacity-80">선생님이 다음 단계로 넘어갈 때까지<br/>잠시만 기다려 주세요.</p>
+                  </motion.div>
                 )}
-              </motion.div>
-            )}
-          </AnimatePresence>
-        </div>
+              </div>
+            </motion.div>
+          )}
+
+          {game.status === 'voting' && (
+            <motion.div 
+              key="voting"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-16 py-10"
+            >
+              <div className="text-center space-y-6">
+                <h2 className="text-6xl font-black tracking-tighter text-slate-900">최고의 작품평을 뽑아주세요</h2>
+                <p className="text-2xl text-slate-400 font-bold">가장 공감이 가고 생생한 설명에 투표하세요!</p>
+              </div>
+
+              <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-10">
+                {submissions.map((sub, i) => (
+                  <motion.div
+                    key={sub.id}
+                    initial={{ opacity: 0, y: 30 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    transition={{ delay: i * 0.1 }}
+                  >
+                    <Card 
+                      className={`h-full p-10 rounded-[3rem] border-4 transition-all cursor-pointer relative overflow-hidden group shadow-xl ${
+                        hasVoted ? 'opacity-60 border-transparent bg-slate-50' : 'hover:border-blue-500 border-transparent hover:scale-[1.03] bg-white hover:shadow-2xl'
+                      }`}
+                      onClick={() => handleVote(sub.id)}
+                    >
+                      <div className="absolute top-0 right-0 p-6 opacity-0 group-hover:opacity-100 transition-opacity">
+                        <Heart className="w-10 h-10 text-blue-500 fill-blue-500" />
+                      </div>
+                      <p className="text-2xl font-bold leading-relaxed mb-12 text-slate-800">"{sub.description}"</p>
+                      <div className="flex justify-between items-center mt-auto pt-6 border-t border-slate-100">
+                        <div className="flex items-center gap-3">
+                          <div className="w-10 h-10 bg-slate-100 rounded-full flex items-center justify-center font-black text-slate-400">
+                            {sub.userName[0]}
+                          </div>
+                          <span className="text-slate-900 font-black text-lg">{sub.userName}</span>
+                        </div>
+                        {hasVoted && (
+                          <div className="flex items-center gap-2 bg-blue-600 text-white px-4 py-2 rounded-full font-black shadow-lg">
+                            <Star className="w-4 h-4 fill-white" />
+                            {sub.voteCount}
+                          </div>
+                        )}
+                      </div>
+                    </Card>
+                  </motion.div>
+                ))}
+              </div>
+            </motion.div>
+          )}
+
+          {game.status === 'results' && (
+            <motion.div 
+              key="results"
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              className="space-y-16 py-10"
+            >
+              {results.find(r => r.roundNumber === game.currentRound) ? (
+                <div className="grid lg:grid-cols-2 gap-20 items-center">
+                  <div className="space-y-10">
+                    <div className="inline-flex items-center gap-3 px-6 py-3 bg-orange-100 text-orange-600 rounded-full text-lg font-black shadow-sm">
+                      <Sparkles className="w-6 h-6" />
+                      AI가 재해석한 작품
+                    </div>
+                    <Card className="overflow-hidden rounded-[5rem] shadow-[0_64px_128px_-32px_rgba(0,0,0,0.2)] border-[16px] border-white ring-2 ring-slate-100 relative group">
+                      <img 
+                        src={results.find(r => r.roundNumber === game.currentRound)?.generatedImageUrl} 
+                        alt="AI Generated" 
+                        className="w-full aspect-square object-cover" 
+                      />
+                      <div className="absolute inset-0 bg-gradient-to-t from-black/40 via-transparent to-transparent opacity-0 group-hover:opacity-100 transition-opacity" />
+                    </Card>
+                  </div>
+                  
+                  <div className="space-y-12">
+                    <div className="space-y-6">
+                      <h2 className="text-5xl font-black tracking-tighter text-slate-900">AI 도슨트의 평가</h2>
+                      <div className="bg-slate-900 text-white p-12 rounded-[4rem] shadow-2xl relative border-l-[12px] border-blue-600">
+                        <MessageSquare className="absolute top-[-30px] left-12 w-16 h-16 text-blue-600 fill-blue-600" />
+                        <p className="text-2xl font-medium leading-relaxed italic text-slate-200">
+                          "{results.find(r => r.roundNumber === game.currentRound)?.aiFeedback}"
+                        </p>
+                      </div>
+                    </div>
+
+                    <div className="p-10 bg-blue-50 rounded-[3rem] border-4 border-blue-100 shadow-xl relative overflow-hidden">
+                      <div className="absolute top-[-20px] right-[-20px] w-40 h-40 bg-blue-200/20 rounded-full blur-3xl" />
+                      <p className="text-xs font-black text-blue-400 uppercase tracking-[0.3em] mb-4">WINNING CRITIQUE</p>
+                      <p className="text-3xl font-black text-blue-900 leading-tight">
+                        "{results.find(r => r.roundNumber === game.currentRound)?.winningDescription}"
+                      </p>
+                      <div className="mt-8 flex items-center gap-4">
+                        <div className="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center text-white font-black text-xl">
+                          {results.find(r => r.roundNumber === game.currentRound)?.winningUserName[0]}
+                        </div>
+                        <p className="text-xl font-black text-blue-600">— {results.find(r => r.roundNumber === game.currentRound)?.winningUserName}</p>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-40 space-y-10">
+                  <div className="relative inline-block">
+                    <div className="absolute inset-0 bg-blue-600 blur-[100px] opacity-20 animate-pulse" />
+                    <Loader2 className="w-32 h-32 animate-spin mx-auto text-blue-600 relative z-10" />
+                  </div>
+                  <div className="space-y-4">
+                    <h2 className="text-5xl font-black tracking-tighter text-slate-900">AI가 걸작을 분석하고 있습니다</h2>
+                    <p className="text-2xl text-slate-400 font-bold">잠시만 기다려 주세요...</p>
+                  </div>
+                  {isTeacher && (
+                    <Button 
+                      onClick={handleGenerateAI} 
+                      className="bg-orange-500 hover:bg-orange-600 text-white px-14 py-8 rounded-[2rem] font-black text-2xl shadow-2xl shadow-orange-100 transition-all hover:scale-105"
+                    >
+                      AI 분석 시작하기
+                    </Button>
+                  )}
+                </div>
+              )}
+            </motion.div>
+          )}
+
+          {game.status === 'finished' && (
+            <motion.div 
+              key="finished"
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="text-center py-40 space-y-16"
+            >
+              <div className="relative inline-block">
+                <div className="absolute inset-0 bg-yellow-400 blur-[120px] opacity-40" />
+                <Trophy className="w-56 h-56 mx-auto text-yellow-500 relative z-10 drop-shadow-[0_20px_40px_rgba(234,179,8,0.4)]" />
+              </div>
+              <div className="space-y-6">
+                <h2 className="text-8xl font-black tracking-tighter text-slate-900">수업 종료!</h2>
+                <p className="text-3xl text-slate-400 font-bold">오늘의 감상 활동이 모두 끝났습니다. 수고하셨습니다!</p>
+              </div>
+              <Button 
+                size="lg" 
+                onClick={onExit} 
+                className="px-20 py-12 text-4xl font-black rounded-[3rem] bg-slate-900 hover:bg-slate-800 text-white shadow-[0_32px_64px_-16px_rgba(0,0,0,0.3)] transition-all hover:scale-105"
+              >
+                메인으로 돌아가기
+              </Button>
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
+
+      {/* QR Modal for Teacher */}
+      {showQR && isTeacher && (
+        <div className="fixed inset-0 bg-slate-900/90 backdrop-blur-xl z-[100] flex items-center justify-center p-6" onClick={() => setShowQR(false)}>
+          <motion.div 
+            initial={{ scale: 0.9, opacity: 0 }}
+            animate={{ scale: 1, opacity: 1 }}
+            className="bg-white p-16 rounded-[4rem] max-w-xl w-full text-center space-y-10 shadow-2xl"
+            onClick={e => e.stopPropagation()}
+          >
+            <div className="space-y-4">
+              <h3 className="text-4xl font-black tracking-tighter">학생 입장 QR 코드</h3>
+              <p className="text-slate-400 font-bold text-lg">카메라로 스캔하여 바로 접속하세요!</p>
+            </div>
+            <div className="bg-slate-50 p-10 rounded-[3rem] inline-block border-4 border-slate-100 shadow-inner">
+              <QRCodeCanvas value={joinUrl} size={320} level="H" includeMargin={true} />
+            </div>
+            <div className="space-y-4">
+              <div className="bg-blue-50 p-6 rounded-3xl border-2 border-blue-100">
+                <p className="text-xs font-black text-blue-400 uppercase tracking-widest mb-2">JOIN CODE</p>
+                <p className="text-6xl font-black text-blue-600 tracking-[0.2em]">{game.code}</p>
+              </div>
+              <Button className="w-full py-8 text-xl font-black rounded-3xl bg-slate-900" onClick={() => setShowQR(false)}>닫기</Button>
+            </div>
+          </motion.div>
+        </div>
+      )}
     </div>
   );
+}
 
-  const VotingView = () => (
-    <div className="min-h-screen bg-indigo-50 p-8">
-      <div className="max-w-4xl mx-auto space-y-8">
-        <div className="text-center space-y-4">
-          <div className="inline-flex items-center gap-2 px-4 py-2 rounded-full bg-indigo-600 text-white text-sm font-bold">
-            <Vote size={18} /> 투표 시간!
+function HallOfFame({ onBack }: any) {
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] py-24 px-6">
+      <div className="max-w-7xl mx-auto">
+        <Button onClick={onBack} variant="ghost" className="mb-16 rounded-full w-16 h-16 p-0 hover:bg-white shadow-sm">
+          <ArrowRight className="rotate-180 w-8 h-8" />
+        </Button>
+        <div className="flex flex-col md:flex-row items-end justify-between gap-8 mb-20">
+          <div className="space-y-4">
+            <h2 className="text-8xl font-black tracking-tighter leading-none">명예의 <span className="text-blue-600">전당</span></h2>
+            <p className="text-2xl text-slate-400 font-bold">지금까지 탄생한 최고의 작품평과 AI 걸작들</p>
           </div>
-          <h2 className="text-4xl font-black text-indigo-950">가장 잘 묘사한 글을 선택하세요</h2>
-          <p className="text-gray-600">작품의 느낌을 가장 잘 살린 설명을 골라주세요.</p>
+          <div className="flex items-center gap-4">
+            <div className="flex -space-x-4">
+              {[1,2,3,4].map(i => (
+                <div key={i} className="w-14 h-14 rounded-full border-4 border-white bg-slate-200 overflow-hidden shadow-lg">
+                  <img src={`https://picsum.photos/seed/${i}/100/100`} alt="User" />
+                </div>
+              ))}
+            </div>
+            <p className="font-black text-slate-900">+128명이 참여 중</p>
+          </div>
         </div>
 
-        <div className="grid gap-4">
-          {submissions.map((sub) => (
+        <div className="grid md:grid-cols-3 gap-12">
+          <div className="col-span-full py-48 text-center bg-white rounded-[5rem] shadow-xl border-4 border-dashed border-slate-100 flex flex-col items-center justify-center gap-8">
+            <div className="w-32 h-32 bg-slate-50 rounded-[2.5rem] flex items-center justify-center">
+              <Star className="w-16 h-16 text-slate-200" />
+            </div>
+            <div className="space-y-2">
+              <p className="text-3xl font-black text-slate-300 tracking-tight">아직 등록된 걸작이 없습니다.</p>
+              <p className="text-xl text-slate-200 font-bold">여러분의 멋진 작품평으로 이곳을 채워주세요!</p>
+            </div>
+            <Button size="lg" className="rounded-full px-10 py-8 bg-blue-600 font-black text-xl" onClick={onBack}>첫 수업 시작하기</Button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DescriptionPage({ onBack }: any) {
+  const steps = [
+    { title: "작품 선정", desc: "선생님이 감상할 미술 작품(학생 작품 또는 명화)을 등록하고 코드를 공유합니다.", icon: Palette, color: "bg-blue-600" },
+    { title: "작품 감상 및 평", desc: "학생들은 작품을 깊이 있게 관찰하고 자신만의 작품평을 정성껏 작성합니다.", icon: PenTool, color: "bg-orange-500" },
+    { title: "최고의 평 투표", desc: "친구들의 작품평 중 가장 공감이 가고 훌륭한 글을 골라 투표합니다.", icon: Heart, color: "bg-pink-500" },
+    { title: "AI 도슨트 피드백", desc: "선정된 평을 바탕으로 AI가 새로운 이미지를 생성하고 전문적인 피드백을 줍니다.", icon: Sparkles, color: "bg-purple-600" }
+  ];
+
+  return (
+    <div className="min-h-screen bg-[#F8FAFC] py-24 px-6">
+      <div className="max-w-5xl mx-auto">
+        <Button onClick={onBack} variant="ghost" className="mb-16 rounded-full w-16 h-16 p-0 hover:bg-white shadow-sm">
+          <ArrowRight className="rotate-180 w-8 h-8" />
+        </Button>
+        
+        <div className="text-center space-y-6 mb-24">
+          <h2 className="text-7xl md:text-9xl font-black tracking-tighter leading-none text-slate-900">게임 <span className="text-blue-600">방법</span></h2>
+          <p className="text-2xl text-slate-400 font-bold max-w-2xl mx-auto">ACE CANVAS는 누구나 쉽고 재미있게 미술을 즐길 수 있도록 설계되었습니다.</p>
+        </div>
+        
+        <div className="grid gap-10">
+          {steps.map((step, i) => (
             <motion.div 
-              key={sub.id}
-              whileHover={{ scale: 1.02 }}
-              onClick={() => handleCastVote(sub.id)}
-              className="bg-white p-6 rounded-2xl shadow-md border border-indigo-100 cursor-pointer flex items-center justify-between group"
+              key={i}
+              initial={{ opacity: 0, y: 20 }}
+              animate={{ opacity: 1, y: 0 }}
+              transition={{ delay: i * 0.1 }}
+              className="flex flex-col md:flex-row items-center gap-10 bg-white p-12 rounded-[4rem] shadow-xl border border-slate-50 group hover:scale-[1.02] transition-all"
             >
-              <div className="flex-1 text-left">
-                <p className="text-lg text-gray-800 leading-relaxed">"{sub.description}"</p>
-                <span className="text-sm text-indigo-500 font-bold mt-2 block opacity-0 group-hover:opacity-100 transition-opacity">- {sub.nickname}</span>
+              <div className={`w-28 h-28 ${step.color} rounded-[2.5rem] flex items-center justify-center shrink-0 shadow-2xl shadow-slate-200 group-hover:rotate-6 transition-transform`}>
+                <step.icon className="w-14 h-14 text-white" />
               </div>
-              <div className="ml-6 text-indigo-200 group-hover:text-indigo-600 transition-colors">
-                <CheckCircle2 size={32} />
+              <div className="text-center md:text-left space-y-3">
+                <div className="flex items-center justify-center md:justify-start gap-3">
+                  <span className="text-blue-600 font-black text-2xl">0{i+1}</span>
+                  <h3 className="text-3xl font-black tracking-tight">{step.title}</h3>
+                </div>
+                <p className="text-xl text-slate-500 font-bold leading-relaxed">{step.desc}</p>
               </div>
             </motion.div>
           ))}
         </div>
-      </div>
-    </div>
-  );
 
-  const ResultsView = () => {
-    const winner = [...submissions].sort((a, b) => b.voteCount - a.voteCount)[0];
-
-    return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-900 to-indigo-950 text-white p-8">
-        <div className="max-w-5xl mx-auto space-y-12">
-          <div className="text-center space-y-4">
-            <motion.div 
-              initial={{ scale: 0 }}
-              animate={{ scale: 1 }}
-              className="inline-block p-4 bg-amber-400 rounded-full text-amber-950 mb-4"
+        <div className="mt-24 p-16 bg-slate-900 rounded-[5rem] text-center text-white relative overflow-hidden shadow-2xl">
+          <div className="absolute top-[-50px] left-[-50px] w-64 h-64 bg-blue-600/20 rounded-full blur-[100px]" />
+          <div className="absolute bottom-[-50px] right-[-50px] w-64 h-64 bg-orange-600/20 rounded-full blur-[100px]" />
+          
+          <div className="relative z-10 space-y-10">
+            <h3 className="text-5xl font-black tracking-tighter">지금 바로 수업을 시작해 보세요!</h3>
+            <p className="text-xl text-slate-400 font-bold max-w-2xl mx-auto">학생들과 함께 미술의 즐거움을 나누는 가장 스마트한 방법, ACE CANVAS입니다.</p>
+            <Button 
+              size="lg" 
+              onClick={onBack} 
+              className="bg-white text-slate-900 hover:bg-slate-100 px-16 py-10 text-3xl font-black rounded-[2.5rem] shadow-2xl transition-all hover:scale-105"
             >
-              <Trophy size={48} />
-            </motion.div>
-            <h2 className="text-5xl font-black">이번 라운드 우승작!</h2>
-            <p className="text-indigo-300 text-xl">"{winner?.description}"</p>
-            <p className="text-amber-400 font-bold text-2xl">- {winner?.nickname} 학생 -</p>
-          </div>
-
-          <div className="grid md:grid-cols-2 gap-8">
-            <Card className="bg-white/10 border-white/10 backdrop-blur-md p-4">
-              <p className="text-center text-sm font-bold text-indigo-300 mb-4 uppercase tracking-widest">원본 작품</p>
-              <img src={session?.artwork.url} className="w-full h-80 object-contain rounded-xl" referrerPolicy="no-referrer" />
-            </Card>
-
-            <Card className="bg-white/10 border-white/10 backdrop-blur-md p-4 flex flex-col items-center justify-center min-h-[400px]">
-              <p className="text-center text-sm font-bold text-indigo-300 mb-4 uppercase tracking-widest">AI 생성 이미지</p>
-              {aiImage ? (
-                <motion.img 
-                  initial={{ opacity: 0, scale: 0.9 }}
-                  animate={{ opacity: 1, scale: 1 }}
-                  src={aiImage} 
-                  className="w-full h-80 object-cover rounded-xl shadow-2xl" 
-                />
-              ) : (
-                <div className="text-center space-y-6">
-                  <div className="w-20 h-20 border-4 border-indigo-400 border-t-transparent rounded-full animate-spin mx-auto" />
-                  <Button variant="accent" onClick={() => handleGenerateImage(winner?.description || "")} loading={loading}>
-                    AI 이미지 생성하기
-                  </Button>
-                </div>
-              )}
-            </Card>
-          </div>
-
-          <div className="flex justify-center gap-4">
-            <Button variant="outline" className="border-white text-white hover:bg-white/10" onClick={() => setView("home")}>메인으로</Button>
-            {user?.uid === session?.teacherId && (
-              <Button variant="accent" className="text-amber-950">다음 라운드 시작</Button>
-            )}
+              메인으로 돌아가기
+            </Button>
           </div>
         </div>
       </div>
-    );
-  };
-
-  return (
-    <div className="font-sans text-gray-900 antialiased">
-      <AnimatePresence mode="wait">
-        {view === "home" && <HomeView key="home" />}
-        {view === "teacher-dashboard" && <TeacherDashboardView key="dashboard" />}
-        {view === "student-join" && <StudentJoinView key="join" />}
-        {view === "student-lobby" && <StudentLobbyView key="lobby" />}
-        {view === "game-play" && <GamePlayView key="play" />}
-        {view === "voting" && <VotingView key="voting" />}
-        {view === "results" && <ResultsView key="results" />}
-      </AnimatePresence>
     </div>
   );
 }
