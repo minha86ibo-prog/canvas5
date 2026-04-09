@@ -15,8 +15,8 @@ import {
   LogOut,
   Timer,
   LogIn,
-  Plus,
-  X
+  X,
+  ArrowLeft
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { QRCodeSVG } from "qrcode.react";
@@ -47,11 +47,12 @@ import {
 } from "./lib/firebase";
 
 // --- Constants ---
+// 위키미디어 공용(Wikimedia Commons)의 안정적인 이미지 URL로 교체
 const PRESET_ARTWORKS = [
   {
     title: "별이 빛나는 밤",
     artist: "빈센트 반 고흐",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1280px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ea/Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg/1024px-Van_Gogh_-_Starry_Night_-_Google_Art_Project.jpg",
     description: "밤하늘의 소용돌이치는 구름과 빛나는 별, 그리고 사이프러스 나무가 특징인 후기 인상주의 걸작입니다."
   },
   {
@@ -59,18 +60,6 @@ const PRESET_ARTWORKS = [
     artist: "요하네스 페르메이르",
     url: "https://upload.wikimedia.org/wikipedia/commons/thumb/0/0b/Johannes_Vermeer_%281632-1675%29_-_The_Girl_With_The_Pearl_Earring_%281665%29.jpg/800px-Johannes_Vermeer_%281632-1675%29_-_The_Girl_With_The_Pearl_Earring_%281665%29.jpg",
     description: "신비로운 표정과 빛나는 진주 귀걸이, 그리고 이국적인 터번이 돋보이는 네덜란드 황금기 초상화입니다."
-  },
-  {
-    title: "기억의 지속",
-    artist: "살바도르 달리",
-    url: "https://upload.wikimedia.org/wikipedia/en/d/dd/The_Persistence_of_Memory.jpg",
-    description: "녹아내리는 시계들이 황량한 풍경 속에 놓여 있는 초현실주의의 대표적인 작품입니다."
-  },
-  {
-    title: "절규",
-    artist: "에드바르 뭉크",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/The_Scream.jpg/800px-The_Scream.jpg",
-    description: "불안과 공포를 강렬한 색채와 소용돌이치는 선으로 표현한 표현주의의 상징적인 작품입니다."
   },
   {
     title: "모나리자",
@@ -81,8 +70,20 @@ const PRESET_ARTWORKS = [
   {
     title: "일출, 인상",
     artist: "클로드 모네",
-    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Claude_Monet%2C_Impression%2C_soleil_levant.jpg/1280px-Claude_Monet%2C_Impression%2C_soleil_levant.jpg",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Claude_Monet%2C_Impression%2C_soleil_levant.jpg/1024px-Claude_Monet%2C_Impression%2C_soleil_levant.jpg",
     description: "인상주의라는 명칭의 기원이 된 작품으로, 항구의 아침 풍경을 짧은 붓터치와 빛의 효과로 포착했습니다."
+  },
+  {
+    title: "아담의 창조",
+    artist: "미켈란젤로",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/5b/Michelangelo_-_Creation_of_Adam_%28cropped%29.jpg/1024px-Michelangelo_-_Creation_of_Adam_%28cropped%29.jpg",
+    description: "시스티나 성당 천장화의 일부로, 신이 아담에게 생명을 불어넣는 숭고한 순간을 표현했습니다."
+  },
+  {
+    title: "우유 따르는 여인",
+    artist: "요하네스 페르메이르",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/2/20/Johannes_Vermeer_-_Het_melkmeisje_-_Google_Art_Project.jpg/800px-Johannes_Vermeer_-_Het_melkmeisje_-_Google_Art_Project.jpg",
+    description: "일상적인 가사 노동의 순간을 정교한 빛의 묘사와 질감 표현으로 승화시킨 걸작입니다."
   }
 ];
 
@@ -204,9 +205,11 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  // Auth State Listener
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
+      // 로그인 성공 시 대시보드로 이동 (홈 화면일 때만)
       if (currentUser && view === "home") {
         setView("teacher-dashboard");
       }
@@ -224,7 +227,7 @@ export default function App() {
         const data = docSnap.data() as Session;
         setSession({ ...data, id: docSnap.id });
         
-        // Auto-navigate based on status
+        // 상태에 따른 자동 뷰 전환
         if (data.status === "playing") setView("game-play");
         if (data.status === "voting") setView("voting");
         if (data.status === "finished") setView("results");
@@ -261,13 +264,15 @@ export default function App() {
 
     setUploading(true);
     try {
+      // Firebase Storage 경로 설정
       const storageRef = ref(storage, `artworks/${user.uid}/${Date.now()}_${file.name}`);
       const snapshot = await uploadBytes(storageRef, file);
       const url = await getDownloadURL(snapshot.ref);
       setArtworkUrl(url);
+      console.log("Upload success:", url);
     } catch (error) {
       console.error("Upload failed", error);
-      alert("이미지 업로드에 실패했습니다.");
+      alert("이미지 업로드에 실패했습니다. Firebase Storage 설정을 확인해 주세요.");
     } finally {
       setUploading(false);
     }
@@ -297,33 +302,42 @@ export default function App() {
       currentRound: 1
     };
 
-    await setDoc(doc(db, "sessions", sessionId), {
-      ...sessionData,
-      createdAt: serverTimestamp()
-    });
-    
-    setSession(sessionData);
-    setLoading(false);
+    try {
+      await setDoc(doc(db, "sessions", sessionId), {
+        ...sessionData,
+        createdAt: serverTimestamp()
+      });
+      setSession(sessionData);
+    } catch (error) {
+      console.error("Session creation failed", error);
+      alert("세션 생성에 실패했습니다.");
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleJoinSession = async () => {
     if (!joinCode || !nickname) return;
     setLoading(true);
     const sessionId = joinCode.toUpperCase();
-    const sessionDoc = await getDoc(doc(db, "sessions", sessionId));
-    
-    if (sessionDoc.exists()) {
-      const studentId = Math.random().toString(36).substring(2, 10);
-      await setDoc(doc(db, "sessions", sessionId, "students", studentId), {
-        nickname,
-        joinedAt: serverTimestamp()
-      });
-      setSession({ id: sessionId, ...sessionDoc.data() } as Session);
-      setView("student-lobby");
-    } else {
-      alert("세션을 찾을 수 없습니다.");
+    try {
+      const sessionDoc = await getDoc(doc(db, "sessions", sessionId));
+      if (sessionDoc.exists()) {
+        const studentId = Math.random().toString(36).substring(2, 10);
+        await setDoc(doc(db, "sessions", sessionId, "students", studentId), {
+          nickname,
+          joinedAt: serverTimestamp()
+        });
+        setSession({ id: sessionId, ...sessionDoc.data() } as Session);
+        setView("student-lobby");
+      } else {
+        alert("세션을 찾을 수 없습니다.");
+      }
+    } catch (error) {
+      console.error("Join failed", error);
+    } finally {
+      setLoading(false);
     }
-    setLoading(false);
   };
 
   const handleStartGame = async () => {
@@ -336,17 +350,22 @@ export default function App() {
     if (!description || !session) return;
     setLoading(true);
     
-    const aiFeedback = await getFeedback(session.artwork.description, description);
-    setFeedback(aiFeedback || "");
-    
-    await addDoc(collection(db, "sessions", session.id, "submissions"), {
-      studentId: auth.currentUser?.uid || "anonymous",
-      nickname: nickname || "익명",
-      description,
-      voteCount: 0,
-      createdAt: serverTimestamp()
-    });
-    setLoading(false);
+    try {
+      const aiFeedback = await getFeedback(session.artwork.description, description);
+      setFeedback(aiFeedback || "");
+      
+      await addDoc(collection(db, "sessions", session.id, "submissions"), {
+        studentId: auth.currentUser?.uid || "anonymous",
+        nickname: nickname || "익명",
+        description,
+        voteCount: 0,
+        createdAt: serverTimestamp()
+      });
+    } catch (error) {
+      console.error("Submission failed", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   const handleStartVoting = async () => {
@@ -366,14 +385,19 @@ export default function App() {
 
   const handleGenerateImage = async (desc: string) => {
     setLoading(true);
-    const img = await generateAIImage(desc);
-    setAiImage(img);
-    setLoading(false);
-    confetti({
-      particleCount: 150,
-      spread: 70,
-      origin: { y: 0.6 }
-    });
+    try {
+      const img = await generateAIImage(desc);
+      setAiImage(img);
+      confetti({
+        particleCount: 150,
+        spread: 70,
+        origin: { y: 0.6 }
+      });
+    } catch (error) {
+      console.error("AI Image Generation failed", error);
+    } finally {
+      setLoading(false);
+    }
   };
 
   // --- Views ---
@@ -427,6 +451,7 @@ export default function App() {
       <div className="max-w-6xl mx-auto space-y-8">
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
+            <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("home")} className="p-2">뒤로가기</Button>
             {user?.photoURL && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-indigo-200" />}
             <div>
               <h1 className="text-xl font-bold text-indigo-950">{user?.displayName} 선생님</h1>
@@ -459,18 +484,18 @@ export default function App() {
               </div>
 
               <div className="space-y-4">
-                <p className="text-sm font-medium text-gray-500">추천 작품 선택</p>
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+                <p className="text-sm font-medium text-gray-500">추천 작품 선택 (안정적인 이미지)</p>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4">
                   {PRESET_ARTWORKS.map((preset, idx) => (
                     <div 
                       key={idx}
                       onClick={() => handleSelectPreset(preset)}
                       className={cn(
-                        "relative aspect-square rounded-xl overflow-hidden cursor-pointer border-4 transition-all",
+                        "relative aspect-video rounded-xl overflow-hidden cursor-pointer border-4 transition-all",
                         artworkUrl === preset.url ? "border-indigo-600 scale-95" : "border-transparent hover:border-indigo-200"
                       )}
                     >
-                      <img src={preset.url} className="w-full h-full object-cover" />
+                      <img src={preset.url} className="w-full h-full object-cover" referrerPolicy="no-referrer" />
                       <div className="absolute inset-0 bg-black/40 flex items-end p-2">
                         <p className="text-[10px] text-white font-bold truncate">{preset.title}</p>
                       </div>
@@ -486,7 +511,7 @@ export default function App() {
               
               {artworkUrl && (
                 <div className="relative aspect-video rounded-2xl overflow-hidden border-2 border-indigo-100 bg-white">
-                  <img src={artworkUrl} className="w-full h-full object-contain" />
+                  <img src={artworkUrl} className="w-full h-full object-contain" referrerPolicy="no-referrer" />
                   <button 
                     onClick={() => setArtworkUrl("")}
                     className="absolute top-2 right-2 p-1 bg-black/50 text-white rounded-full hover:bg-black/70"
@@ -501,7 +526,7 @@ export default function App() {
                 <textarea 
                   value={artworkDesc}
                   onChange={(e) => setArtworkDesc(e.target.value)}
-                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-32"
+                  className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 h-32 bg-white text-gray-900"
                   placeholder="작품의 특징, 색감, 구도 등을 자세히 적어주세요."
                 />
               </div>
@@ -549,6 +574,7 @@ export default function App() {
     <div className="min-h-screen bg-amber-50 flex items-center justify-center p-6">
       <Card className="max-w-md w-full space-y-8 p-10">
         <div className="text-center space-y-2">
+          <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("home")} className="absolute top-4 left-4">뒤로가기</Button>
           <h2 className="text-3xl font-bold text-gray-900">게임 참여하기</h2>
           <p className="text-gray-500">닉네임과 접속 코드를 입력하세요.</p>
         </div>
@@ -556,7 +582,6 @@ export default function App() {
           <Input label="닉네임" value={nickname} onChange={setNickname} placeholder="멋진 예술가" icon={User} />
           <Input label="접속 코드" value={joinCode} onChange={setJoinCode} placeholder="ABCDEF" icon={Palette} />
           <Button variant="accent" className="w-full mt-4 text-amber-950" onClick={handleJoinSession} loading={loading}>입장하기</Button>
-          <Button variant="ghost" className="w-full" onClick={() => setView("home")}>뒤로 가기</Button>
         </div>
       </Card>
     </div>
@@ -564,6 +589,7 @@ export default function App() {
 
   const StudentLobbyView = () => (
     <div className="min-h-screen bg-indigo-600 flex flex-col items-center justify-center p-6 text-white text-center">
+      <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("student-join")} className="absolute top-6 left-6 text-white hover:bg-white/10">뒤로가기</Button>
       <motion.div 
         animate={{ scale: [1, 1.1, 1] }}
         transition={{ repeat: Infinity, duration: 2 }}
