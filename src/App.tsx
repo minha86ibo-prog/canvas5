@@ -71,6 +71,18 @@ const PRESET_ARTWORKS = [
     artist: "에드바르 뭉크",
     url: "https://upload.wikimedia.org/wikipedia/commons/thumb/f/f4/The_Scream.jpg/800px-The_Scream.jpg",
     description: "불안과 공포를 강렬한 색채와 소용돌이치는 선으로 표현한 표현주의의 상징적인 작품입니다."
+  },
+  {
+    title: "모나리자",
+    artist: "레오나르도 다 빈치",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/e/ec/Mona_Lisa_by_Leonardo_da_Vinci_from_C2RMF_retouched.jpg/800px-Mona_Lisa_by_Leonardo_da_Vinci_from_C2RMF_retouched.jpg",
+    description: "신비로운 미소와 스푸마토 기법으로 유명한 르네상스 시대의 가장 상징적인 초상화입니다."
+  },
+  {
+    title: "일출, 인상",
+    artist: "클로드 모네",
+    url: "https://upload.wikimedia.org/wikipedia/commons/thumb/5/59/Claude_Monet%2C_Impression%2C_soleil_levant.jpg/1280px-Claude_Monet%2C_Impression%2C_soleil_levant.jpg",
+    description: "인상주의라는 명칭의 기원이 된 작품으로, 항구의 아침 풍경을 짧은 붓터치와 빛의 효과로 포착했습니다."
   }
 ];
 
@@ -158,8 +170,9 @@ const Input = ({ label, value, onChange, placeholder, type = "text", icon: Icon 
         value={value}
         onChange={(e) => onChange(e.target.value)}
         placeholder={placeholder}
+        autoComplete="off"
         className={cn(
-          "w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all",
+          "w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white text-gray-900",
           Icon && "pl-10"
         )}
       />
@@ -597,8 +610,9 @@ export default function App() {
             <textarea 
               value={description}
               onChange={(e) => setDescription(e.target.value)}
-              className="flex-1 w-full p-4 rounded-2xl border-2 border-indigo-50 focus:border-indigo-500 focus:outline-none text-lg resize-none min-h-[200px]"
+              className="flex-1 w-full p-4 rounded-2xl border-2 border-indigo-50 focus:border-indigo-500 focus:outline-none text-lg resize-none min-h-[250px] bg-white text-gray-900 shadow-inner"
               placeholder="여기에 묘사 내용을 자유롭게 입력하세요... 글자 수 제한 없이 마음껏 표현해 보세요!"
+              spellCheck="false"
             />
             <Button className="w-full py-4" onClick={handleSubmitDescription} loading={loading}>제출하기</Button>
           </Card>
