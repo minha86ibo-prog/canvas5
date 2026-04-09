@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef, useCallback } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import { motion, AnimatePresence } from "motion/react";
 import { 
   Palette, 
@@ -18,7 +18,8 @@ import {
   X,
   ArrowLeft,
   QrCode,
-  Copy
+  Copy,
+  AlertCircle
 } from "lucide-react";
 import confetti from "canvas-confetti";
 import { QRCodeSVG } from "qrcode.react";
@@ -120,7 +121,7 @@ interface Session {
   teacherId: string;
 }
 
-// --- Components ---
+// --- Reusable Components ---
 
 const Button = ({ children, onClick, className, variant = "primary", disabled = false, icon: Icon, loading = false }: any) => {
   const variants = {
@@ -129,6 +130,7 @@ const Button = ({ children, onClick, className, variant = "primary", disabled = 
     outline: "bg-transparent border-2 border-indigo-600 text-indigo-600 hover:bg-indigo-50",
     ghost: "bg-transparent text-gray-600 hover:bg-gray-100",
     accent: "bg-amber-400 text-amber-950 hover:bg-amber-500 shadow-sm",
+    danger: "bg-rose-500 text-white hover:bg-rose-600 shadow-sm",
   };
 
   return (
@@ -162,7 +164,27 @@ const Card = ({ children, className, onClick }: any) => (
   </div>
 );
 
-// --- Main App ---
+const InputField = ({ label, value, onChange, placeholder, type = "text", icon: Icon, className }: any) => (
+  <div className={cn("space-y-1.5 w-full", className)}>
+    {label && <label className="text-sm font-medium text-gray-700 ml-1">{label}</label>}
+    <div className="relative">
+      {Icon && <Icon className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />}
+      <input
+        type={type}
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        placeholder={placeholder}
+        autoComplete="off"
+        className={cn(
+          "w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent transition-all bg-white text-gray-900",
+          Icon && "pl-10"
+        )}
+      />
+    </div>
+  </div>
+);
+
+// --- Main App Component ---
 
 export default function App() {
   const [view, setView] = useState<View>("home");
@@ -173,13 +195,15 @@ export default function App() {
   const [loading, setLoading] = useState(false);
   const [aiImage, setAiImage] = useState("");
 
-  // Student Input State
+  // Student Join State
   const [nickname, setNickname] = useState("");
   const [joinCode, setJoinCode] = useState("");
+  
+  // Game Play State
   const [studentDescription, setStudentDescription] = useState("");
   const [feedback, setFeedback] = useState("");
 
-  // Teacher Form State
+  // Teacher Dashboard State
   const [artworkTitle, setArtworkTitle] = useState("");
   const [artworkArtist, setArtworkArtist] = useState("");
   const [artworkDesc, setArtworkDesc] = useState("");
@@ -188,7 +212,8 @@ export default function App() {
   const [uploading, setUploading] = useState(false);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  // Auth State Listener
+  // --- Auth & Session Sync ---
+
   useEffect(() => {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
@@ -199,7 +224,6 @@ export default function App() {
     return () => unsubscribe();
   }, [view]);
 
-  // Real-time session listener
   useEffect(() => {
     if (!joinCode && !session?.id) return;
     const sessionId = session?.id || joinCode.toUpperCase();
@@ -209,10 +233,10 @@ export default function App() {
         const data = docSnap.data() as Session;
         setSession({ ...data, id: docSnap.id });
         
-        // Auto-navigate based on status
-        if (data.status === "playing") setView("game-play");
-        if (data.status === "voting") setView("voting");
-        if (data.status === "finished") setView("results");
+        // View auto-routing based on session status
+        if (data.status === "playing" && view !== "game-play") setView("game-play");
+        if (data.status === "voting" && view !== "voting") setView("voting");
+        if (data.status === "finished" && view !== "results") setView("results");
       }
     });
 
@@ -229,7 +253,9 @@ export default function App() {
       unsubStudents();
       unsubSubmissions();
     };
-  }, [session?.id, joinCode]);
+  }, [session?.id, joinCode, view]);
+
+  // --- Handlers ---
 
   const handleTeacherLogin = async () => {
     try {
@@ -237,6 +263,7 @@ export default function App() {
       setView("teacher-dashboard");
     } catch (error) {
       console.error("Login failed", error);
+      alert("로그인에 실패했습니다.");
     }
   };
 
@@ -250,24 +277,18 @@ export default function App() {
       const snapshot = await uploadBytes(storageRef, file);
       const url = await getDownloadURL(snapshot.ref);
       setArtworkUrl(url);
+      console.log("File uploaded successfully:", url);
     } catch (error) {
-      console.error("Upload failed", error);
-      alert("이미지 업로드에 실패했습니다.");
+      console.error("Upload failed:", error);
+      alert("이미지 업로드에 실패했습니다. Firebase 설정을 확인해 주세요.");
     } finally {
       setUploading(false);
     }
   };
 
-  const handleSelectPreset = (preset: typeof PRESET_ARTWORKS[0]) => {
-    setArtworkTitle(preset.title);
-    setArtworkArtist(preset.artist);
-    setArtworkUrl(preset.url);
-    setArtworkDesc(preset.description);
-  };
-
   const handleCreateSession = async () => {
     if (!artworkUrl || !artworkTitle || !user) {
-      alert("작품 정보와 이미지를 모두 입력해 주세요.");
+      alert("작품 제목과 이미지가 필요합니다.");
       return;
     }
     setLoading(true);
@@ -290,13 +311,17 @@ export default function App() {
       setSession(sessionData);
     } catch (error) {
       console.error("Session creation failed", error);
+      alert("세션 생성 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
   };
 
   const handleJoinSession = async () => {
-    if (!joinCode || !nickname) return;
+    if (!joinCode || !nickname) {
+      alert("닉네임과 접속 코드를 입력해 주세요.");
+      return;
+    }
     setLoading(true);
     const sessionId = joinCode.toUpperCase();
     try {
@@ -310,10 +335,11 @@ export default function App() {
         setSession({ id: sessionId, ...sessionDoc.data() } as Session);
         setView("student-lobby");
       } else {
-        alert("세션을 찾을 수 없습니다.");
+        alert("유효하지 않은 접속 코드입니다.");
       }
     } catch (error) {
       console.error("Join failed", error);
+      alert("참여 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -342,6 +368,7 @@ export default function App() {
       });
     } catch (error) {
       console.error("Submission failed", error);
+      alert("제출 중 오류가 발생했습니다.");
     } finally {
       setLoading(false);
     }
@@ -374,12 +401,13 @@ export default function App() {
       });
     } catch (error) {
       console.error("AI Image Generation failed", error);
+      alert("이미지 생성에 실패했습니다.");
     } finally {
       setLoading(false);
     }
   };
 
-  // --- Views ---
+  // --- View Components ---
 
   const HomeView = () => (
     <div className="min-h-screen bg-gradient-to-br from-indigo-50 via-white to-amber-50 flex flex-col items-center justify-center p-6">
@@ -431,7 +459,7 @@ export default function App() {
         <div className="flex items-center justify-between">
           <div className="flex items-center gap-4">
             <Button variant="ghost" icon={ArrowLeft} onClick={() => setView("home")} className="p-2">뒤로가기</Button>
-            {user?.photoURL && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-indigo-200" />}
+            {user?.photoURL && <img src={user.photoURL} className="w-10 h-10 rounded-full border-2 border-indigo-200" referrerPolicy="no-referrer" />}
             <div>
               <h1 className="text-xl font-bold text-indigo-950">{user?.displayName} 선생님</h1>
               <p className="text-xs text-gray-500">{user?.email}</p>
@@ -468,7 +496,12 @@ export default function App() {
                   {PRESET_ARTWORKS.map((preset, idx) => (
                     <div 
                       key={idx}
-                      onClick={() => handleSelectPreset(preset)}
+                      onClick={() => {
+                        setArtworkTitle(preset.title);
+                        setArtworkArtist(preset.artist);
+                        setArtworkUrl(preset.url);
+                        setArtworkDesc(preset.description);
+                      }}
                       className={cn(
                         "relative aspect-video rounded-xl overflow-hidden cursor-pointer border-4 transition-all",
                         artworkUrl === preset.url ? "border-indigo-600 scale-95" : "border-transparent hover:border-indigo-200"
@@ -484,24 +517,8 @@ export default function App() {
               </div>
 
               <div className="grid md:grid-cols-2 gap-4">
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-gray-700 ml-1">작품 제목</label>
-                  <input
-                    value={artworkTitle}
-                    onChange={(e) => setArtworkTitle(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="예: 별이 빛나는 밤"
-                  />
-                </div>
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-gray-700 ml-1">작가 이름</label>
-                  <input
-                    value={artworkArtist}
-                    onChange={(e) => setArtworkArtist(e.target.value)}
-                    className="w-full px-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                    placeholder="예: 빈센트 반 고흐"
-                  />
-                </div>
+                <InputField label="작품 제목" value={artworkTitle} onChange={setArtworkTitle} placeholder="예: 별이 빛나는 밤" />
+                <InputField label="작가 이름" value={artworkArtist} onChange={setArtworkArtist} placeholder="예: 빈센트 반 고흐" />
               </div>
               
               {artworkUrl && (
@@ -574,30 +591,8 @@ export default function App() {
           <p className="text-gray-500">닉네임과 접속 코드를 입력하세요.</p>
         </div>
         <div className="space-y-4">
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700 ml-1">닉네임</label>
-            <div className="relative">
-              <User className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                value={nickname}
-                onChange={(e) => setNickname(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="멋진 예술가"
-              />
-            </div>
-          </div>
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-gray-700 ml-1">접속 코드</label>
-            <div className="relative">
-              <Palette className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" size={18} />
-              <input
-                value={joinCode}
-                onChange={(e) => setJoinCode(e.target.value)}
-                className="w-full pl-10 pr-4 py-3 rounded-xl border border-gray-200 focus:outline-none focus:ring-2 focus:ring-indigo-500"
-                placeholder="ABCDEF"
-              />
-            </div>
-          </div>
+          <InputField label="닉네임" value={nickname} onChange={setNickname} placeholder="멋진 예술가" icon={User} />
+          <InputField label="접속 코드" value={joinCode} onChange={setJoinCode} placeholder="ABCDEF" icon={Palette} />
           <Button variant="accent" className="w-full mt-4 text-amber-950" onClick={handleJoinSession} loading={loading}>입장하기</Button>
         </div>
       </Card>
@@ -630,7 +625,7 @@ export default function App() {
           <h2 className="font-bold text-gray-900">{session?.artwork.title} - {session?.artwork.artist}</h2>
         </div>
         <div className="flex items-center gap-2 text-gray-500 font-medium">
-          <Timer size={18} /> 02:00
+          <Timer size={18} /> 실시간 진행 중
         </div>
       </header>
 
